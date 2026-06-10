@@ -1,0 +1,1422 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>MediOS — Smart Pharmacy OS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+<style>
+:root{
+  --bg:#FFFFFF;--surface:#F7F9F7;--surface-alt:#EEF3EE;--border:#D6E4D6;
+  --primary:#1A7A3C;--primary-dark:#145F2F;--primary-light:#E8F5ED;
+  --accent:#0D1F0F;--text:#1C2B1E;--text-muted:#5A7260;
+  --danger:#C0392B;--danger-light:#FDECEA;--warning:#D97706;--warning-light:#FEF3C7;
+  --success:#1A7A3C;--success-light:#E8F5ED;--black:#0D0D0D;--white:#FFFFFF;
+  --radius-sm:6px;--radius-md:10px;--radius-lg:16px;--radius-full:9999px;
+  --shadow-sm:0 1px 3px rgba(13,31,15,.08);--shadow-md:0 4px 12px rgba(13,31,15,.10);
+  --shadow-lg:0 8px 24px rgba(13,31,15,.12);--shadow-card:0 2px 8px rgba(13,31,15,.07);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:'Inter',sans-serif;font-size:15px;line-height:1.6;color:var(--text);background:var(--surface);-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;color:var(--accent);line-height:1.2}
+h1{font-size:24px}h2{font-size:20px}h3{font-size:17px}h4{font-size:15px}
+.mono{font-family:'JetBrains Mono',monospace;font-weight:500}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;font-size:inherit}
+input,select,textarea{font-family:inherit;font-size:14px;color:var(--text);background:var(--white);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;outline:none;width:100%;transition:border-color .15s}
+input:focus,select:focus,textarea:focus{border:2px solid var(--primary);padding:9px 11px}
+label{display:block;font-size:13px;font-weight:500;color:var(--text-muted);margin-bottom:6px}
+.req::after{content:" *";color:var(--danger)}
+a{color:var(--primary);text-decoration:none}
+a:hover{text-decoration:underline}
+/* layout */
+#app{display:flex;flex-direction:column;height:100vh;background:var(--bg)}
+.topbar{height:60px;background:var(--white);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 24px;gap:24px;z-index:50}
+.logo{display:flex;align-items:center;gap:10px;font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:18px;color:var(--accent)}
+.logo-mark{width:32px;height:32px;background:var(--primary);border-radius:var(--radius-full);display:flex;align-items:center;justify-content:center;color:white;font-weight:700}
+.store-name{font-size:14px;color:var(--text-muted)}
+.topbar .spacer{flex:1}
+.datetime{font-size:13px;color:var(--text-muted);text-align:right}
+.icon-btn{width:40px;height:40px;border-radius:var(--radius-full);display:flex;align-items:center;justify-content:center;position:relative;transition:background .15s}
+.icon-btn:hover{background:var(--surface-alt)}
+.badge-dot{position:absolute;top:6px;right:6px;background:var(--danger);color:white;font-size:10px;font-weight:600;padding:1px 5px;border-radius:var(--radius-full);min-width:16px;text-align:center}
+.avatar{width:36px;height:36px;border-radius:var(--radius-full);background:var(--primary);color:white;display:flex;align-items:center;justify-content:center;font-weight:600;cursor:pointer}
+.main{flex:1;display:flex;overflow:hidden}
+.sidenav{width:240px;background:var(--white);border-right:1px solid var(--border);padding:16px 0;display:flex;flex-direction:column;overflow-y:auto;flex-shrink:0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:12px 20px;font-size:13px;font-weight:500;color:var(--text-muted);cursor:pointer;border-left:2px solid transparent;transition:background .15s}
+.nav-item:hover{background:var(--surface)}
+.nav-item.active{background:var(--primary-light);color:var(--primary);border-left-color:var(--primary);font-weight:600}
+.nav-item .ico{font-size:18px;width:24px;text-align:center}
+.nav-foot{margin-top:auto;padding:16px 20px;font-size:11px;color:var(--text-muted)}
+.content{flex:1;overflow-y:auto;padding:24px;background:var(--surface)}
+.page-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px}
+/* cards */
+.card{background:var(--white);border-radius:var(--radius-md);box-shadow:var(--shadow-card);padding:20px}
+.grid{display:grid;gap:16px}
+.grid-4{grid-template-columns:repeat(4,1fr)}
+.grid-3{grid-template-columns:repeat(3,1fr)}
+.grid-2{grid-template-columns:repeat(2,1fr)}
+.grid-2-1{grid-template-columns:2fr 1fr}
+@media(max-width:900px){.grid-4,.grid-3,.grid-2,.grid-2-1{grid-template-columns:1fr}}
+.stat-card{background:var(--white);border-radius:var(--radius-md);box-shadow:var(--shadow-card);padding:18px;cursor:pointer;transition:transform .15s,box-shadow .15s;border-left:2px solid transparent}
+.stat-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-md);border-left-color:var(--primary)}
+.stat-num{font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:700;color:var(--black);line-height:1.1}
+.stat-label{font-size:13px;color:var(--text-muted);margin-top:6px}
+.stat-sub{font-size:11px;color:var(--text-muted);margin-top:4px}
+.stat-trend{display:inline-block;margin-left:6px;font-size:12px}
+.up{color:var(--success)}.down{color:var(--danger)}
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 16px;font-size:13px;font-weight:600;border-radius:var(--radius-sm);transition:all .15s;border:1px solid transparent;white-space:nowrap}
+.btn-primary{background:var(--primary);color:white}
+.btn-primary:hover{background:var(--primary-dark)}
+.btn-outline{background:transparent;color:var(--primary);border-color:var(--primary)}
+.btn-outline:hover{background:var(--primary-light)}
+.btn-ghost{background:var(--surface-alt);color:var(--text)}
+.btn-ghost:hover{background:var(--border)}
+.btn-danger{background:var(--danger);color:white}
+.btn-danger:hover{filter:brightness(.9)}
+.btn-sm{padding:6px 10px;font-size:12px}
+.btn-lg{padding:14px 20px;font-size:15px;width:100%}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+/* badges */
+.badge{display:inline-flex;align-items:center;padding:3px 8px;border-radius:var(--radius-full);font-size:11px;font-weight:600;line-height:1.4}
+.badge-green{background:var(--primary-light);color:var(--primary)}
+.badge-red{background:var(--danger-light);color:var(--danger)}
+.badge-orange{background:var(--warning-light);color:var(--warning)}
+.badge-grey{background:var(--surface-alt);color:var(--text-muted)}
+.badge-black{background:#222;color:white}
+/* tables */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:10px 12px;font-weight:600;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border)}
+td{padding:12px;border-bottom:1px solid var(--surface-alt)}
+tbody tr{transition:background .1s}
+tbody tr:hover{background:var(--surface-alt)}
+.table-wrap{overflow-x:auto;border-radius:var(--radius-md)}
+/* tabs */
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:20px;overflow-x:auto}
+.tab{padding:10px 16px;font-size:13px;font-weight:500;color:var(--text-muted);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+.tab.active{color:var(--primary);border-bottom-color:var(--primary);font-weight:600}
+/* alerts strip */
+.alerts-strip{display:flex;gap:10px;overflow-x:auto;padding:4px 0;margin-bottom:20px}
+.alert-chip{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:var(--radius-full);background:var(--white);box-shadow:var(--shadow-sm);font-size:13px;cursor:pointer;border:1px solid var(--border);white-space:nowrap;transition:transform .1s}
+.alert-chip:hover{transform:translateY(-1px)}
+.alert-chip .cnt{background:var(--surface-alt);padding:1px 8px;border-radius:var(--radius-full);font-size:11px;font-weight:700}
+/* modal */
+.modal-backdrop{position:fixed;inset:0;background:rgba(13,31,15,.4);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;animation:fade .2s}
+.modal{background:var(--white);border-radius:var(--radius-lg);max-width:680px;width:100%;max-height:90vh;overflow:auto;animation:pop .2s}
+.modal-lg{max-width:1000px}
+.modal-sm{max-width:420px}
+.modal-head{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.modal-body{padding:24px}
+.modal-foot{padding:16px 24px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes pop{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:scale(1)}}
+/* toast */
+.toast-wrap{position:fixed;top:80px;right:24px;z-index:2000;display:flex;flex-direction:column;gap:8px}
+.toast{padding:12px 16px;border-radius:var(--radius-md);background:white;box-shadow:var(--shadow-lg);font-size:13px;border-left:4px solid var(--primary);animation:slidein .25s;max-width:340px}
+.toast.error{border-left-color:var(--danger)}
+.toast.warning{border-left-color:var(--warning)}
+@keyframes slidein{from{transform:translateX(20px);opacity:0}to{transform:translateX(0);opacity:1}}
+/* form */
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.form-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px}
+.form-field{margin-bottom:14px}
+.toggle-group{display:inline-flex;background:var(--surface);border-radius:var(--radius-sm);padding:3px;gap:2px}
+.toggle-group button{padding:6px 14px;border-radius:var(--radius-sm);font-size:13px;font-weight:500;color:var(--text-muted)}
+.toggle-group button.active{background:var(--primary);color:white}
+/* dashboard panels */
+.panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.panel-title{font-size:15px;font-weight:700;color:var(--accent);font-family:'Plus Jakarta Sans',sans-serif;display:flex;align-items:center;gap:8px}
+.divider{height:1px;background:var(--border);margin:12px 0}
+.expiry-row-red{background:#FDECEA40}
+.expiry-row-orange{background:#FEF3C740}
+.expiry-row-yellow{background:#FFFBEB60}
+/* search dropdown */
+.search-wrap{position:relative}
+.search-dropdown{position:absolute;top:calc(100% + 4px);left:0;right:0;background:white;border-radius:var(--radius-md);box-shadow:var(--shadow-lg);max-height:360px;overflow-y:auto;z-index:30;border:1px solid var(--border)}
+.search-item{padding:12px 16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid var(--surface-alt)}
+.search-item:hover,.search-item.kbd{background:var(--primary-light)}
+.search-item .name{font-weight:600;color:var(--accent)}
+.search-item .meta{font-size:11px;color:var(--text-muted)}
+/* med info popup */
+.med-popup{margin-top:12px;border:1px solid var(--border);border-radius:var(--radius-md);padding:16px;background:var(--surface)}
+.batch-row{display:grid;grid-template-columns:1.4fr 1fr .8fr 1fr 1fr;gap:8px;padding:8px;border-radius:var(--radius-sm);font-size:12px;cursor:pointer;align-items:center}
+.batch-row.head{font-weight:600;color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.5px;cursor:default}
+.batch-row.selected{background:var(--primary-light);border-left:2px solid var(--primary)}
+.batch-row.expiring{background:var(--warning-light)}
+.qty-stepper{display:inline-flex;align-items:center;gap:0;border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden}
+.qty-stepper button{width:32px;height:36px;background:var(--surface);color:var(--text);font-weight:600}
+.qty-stepper button:hover{background:var(--surface-alt)}
+.qty-stepper input{width:64px;text-align:center;border:none;border-radius:0;padding:8px 4px}
+.qty-stepper input:focus{padding:8px 4px;border:none}
+/* bill summary */
+.sum-row{display:flex;justify-content:space-between;padding:6px 0;font-size:14px}
+.sum-row.total{font-size:24px;font-weight:700;color:var(--black);padding-top:14px;border-top:1px solid var(--border);margin-top:8px}
+/* charts */
+.bar-chart-row{display:grid;grid-template-columns:140px 1fr 60px;gap:10px;align-items:center;padding:6px 0;font-size:12px;cursor:pointer}
+.bar-chart-row:hover{background:var(--surface-alt)}
+.bar-bg{height:18px;background:var(--surface-alt);border-radius:var(--radius-sm);overflow:hidden}
+.bar-fill{height:100%;background:var(--primary);border-radius:var(--radius-sm);transition:width .3s}
+/* notification dropdown */
+.notif-dropdown{position:absolute;top:64px;right:60px;width:360px;background:white;border-radius:var(--radius-md);box-shadow:var(--shadow-lg);max-height:480px;overflow:auto;z-index:200;border:1px solid var(--border)}
+.notif-item{padding:12px 16px;border-bottom:1px solid var(--surface-alt);display:flex;gap:10px;font-size:13px}
+.notif-item.unread{background:var(--primary-light)}
+.notif-item .when{font-size:11px;color:var(--text-muted);margin-top:2px}
+/* empty */
+.empty{text-align:center;padding:40px;color:var(--text-muted)}
+.empty-icon{font-size:48px;opacity:.4;margin-bottom:10px}
+/* welcome */
+.welcome{position:fixed;inset:0;background:linear-gradient(135deg,var(--primary-light),white);z-index:5000;display:flex;align-items:center;justify-content:center;padding:20px}
+.welcome-card{background:white;border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);max-width:480px;width:100%;padding:32px}
+.welcome-step{display:none}.welcome-step.active{display:block}
+/* mobile */
+@media(max-width:768px){
+  .sidenav{position:fixed;bottom:0;left:0;right:0;width:100%;height:60px;flex-direction:row;justify-content:space-around;border-right:none;border-top:1px solid var(--border);padding:0;z-index:40}
+  .nav-item{flex-direction:column;gap:2px;padding:8px;font-size:10px;border-left:none;border-top:2px solid transparent;flex:1;justify-content:center}
+  .nav-item.active{border-left:none;border-top-color:var(--primary)}
+  .nav-item .label{display:block}
+  .nav-foot{display:none}
+  .topbar{height:50px;padding:0 12px;gap:8px}
+  .store-name,.datetime{display:none}
+  .content{padding:14px;padding-bottom:80px}
+  .main{flex-direction:column-reverse}
+  .form-row,.form-row-3{grid-template-columns:1fr}
+}
+/* print */
+@media print{
+  .topbar,.sidenav,.modal-foot,.alerts-strip,button:not(.print-keep){display:none!important}
+  body,.content,#app{background:white;color:black}
+  .modal-backdrop{position:static;background:white;padding:0}
+  .modal{box-shadow:none;max-width:100%;max-height:none}
+  table{font-size:11px}
+  *{color:black!important}
+}
+.hidden{display:none!important}
+.flex{display:flex}.flex-col{flex-direction:column}.items-center{align-items:center}.justify-between{justify-content:space-between}.gap-2{gap:8px}.gap-3{gap:12px}.gap-4{gap:16px}
+.mt-2{margin-top:8px}.mt-3{margin-top:12px}.mt-4{margin-top:16px}.mb-2{margin-bottom:8px}.mb-3{margin-bottom:12px}.mb-4{margin-bottom:16px}
+.text-muted{color:var(--text-muted)}.text-sm{font-size:13px}.text-xs{font-size:11px}.text-lg{font-size:20px}.fw-600{font-weight:600}.fw-700{font-weight:700}
+.upload-zone{border:2px dashed var(--border);border-radius:var(--radius-md);padding:40px;text-align:center;cursor:pointer;transition:border-color .15s;background:var(--surface)}
+.upload-zone:hover{border-color:var(--primary);background:var(--primary-light)}
+.upload-zone.has-img{padding:12px}
+.upload-zone img{max-width:100%;max-height:240px;border-radius:var(--radius-sm)}
+</style>
+</head>
+<body>
+
+<!-- Welcome -->
+<div id="welcome" class="welcome hidden">
+  <div class="welcome-card">
+    <div class="logo mb-4"><div class="logo-mark">M</div>MediOS</div>
+    <div id="w-step-1" class="welcome-step active">
+      <h2>Welcome to MediOS</h2>
+      <p class="text-muted mb-4">Smart Pharmacy OS for India</p>
+      <label class="req">Store Name</label>
+      <input id="w-store" placeholder="e.g. Apollo Medicals" />
+      <label class="mt-3">Owner Name</label>
+      <input id="w-owner" placeholder="Optional" />
+      <button class="btn btn-primary btn-lg mt-4" onclick="welcomeNext(1)">Continue</button>
+    </div>
+    <div id="w-step-2" class="welcome-step">
+      <h2>AI Bill Scanner</h2>
+      <p class="text-muted mb-4">Add your Lovable AI / Anthropic API key to use bill scanning. You can also add it later in Settings.</p>
+      <label>API Key (optional)</label>
+      <input id="w-api" type="password" placeholder="sk-..." />
+      <div class="text-xs text-muted mt-2">Stored locally on your device.</div>
+      <button class="btn btn-primary btn-lg mt-4" onclick="welcomeNext(2)">Setup my pharmacy</button>
+    </div>
+    <div id="w-step-3" class="welcome-step">
+      <h2>Setting up...</h2>
+      <p class="text-muted mt-3">Loading seed inventory, suppliers and doctors.</p>
+    </div>
+  </div>
+</div>
+
+<div id="app" class="hidden">
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="logo"><div class="logo-mark">M</div>MediOS</div>
+    <div class="store-name" id="t-store">—</div>
+    <div class="spacer"></div>
+    <div class="datetime" id="t-datetime">—</div>
+    <button class="icon-btn" onclick="toggleNotif()" title="Notifications">
+      🔔<span class="badge-dot hidden" id="notif-count">0</span>
+    </button>
+    <div class="avatar" id="t-avatar" onclick="toggleProfile()">M</div>
+  </header>
+
+  <div id="notif-dropdown" class="notif-dropdown hidden"></div>
+  <div id="profile-dropdown" class="notif-dropdown hidden" style="right:24px;width:200px"></div>
+
+  <div class="main">
+    <nav class="sidenav">
+      <div class="nav-item active" data-route="dashboard" onclick="go('dashboard')"><span class="ico">🏠</span><span class="label">Dashboard</span></div>
+      <div class="nav-item" data-route="billing" onclick="go('billing')"><span class="ico">🧾</span><span class="label">Billing</span></div>
+      <div class="nav-item" data-route="stock" onclick="go('stock')"><span class="ico">📦</span><span class="label">Stock</span></div>
+      <div class="nav-item" data-route="doctors" onclick="go('doctors')"><span class="ico">👨‍⚕️</span><span class="label">Doctors</span></div>
+      <div class="nav-item" data-route="reports" onclick="go('reports')"><span class="ico">📊</span><span class="label">Reports</span></div>
+      <div class="nav-item" data-route="settings" onclick="go('settings')"><span class="ico">⚙️</span><span class="label">Settings</span></div>
+      <div class="nav-foot">MediOS v1.0 · <a href="#" onclick="toast('Need help? Email hello@medios.app','info');return false">Need help?</a></div>
+    </nav>
+    <main class="content" id="content"></main>
+  </div>
+</div>
+
+<div id="modal-root"></div>
+<div id="toast-root" class="toast-wrap"></div>
+
+<script>
+/* =========================================================
+   DATA LAYER
+   ========================================================= */
+const LS_KEY='mediOS_data';
+let DB=null,STATE={route:'dashboard',billDraft:null,stockTab:'inventory',reportTab:'sales',settingsTab:'profile',selectedDoctor:null,selectedSupplier:null,prefilledBill:null};
+
+function uid(){return Math.random().toString(36).slice(2,10)}
+function todayISO(d){d=d||new Date();return d.toISOString().slice(0,10)}
+function nowISO(){return new Date().toISOString()}
+function inDays(n){const d=new Date();d.setDate(d.getDate()+n);return todayISO(d)}
+function daysBetween(a,b){return Math.floor((new Date(a)-new Date(b))/86400000)}
+function inr(n){if(n==null||isNaN(n))return '₹0';n=Math.round(n*100)/100;const neg=n<0;n=Math.abs(n);const [i,d]=n.toFixed(2).split('.');const li=i.length;let r='';if(li<=3)r=i;else{const last3=i.slice(-3);const rest=i.slice(0,-3);r=rest.replace(/\B(?=(\d{2})+(?!\d))/g,',')+','+last3}return (neg?'-':'')+'₹'+r+'.'+d}
+function fmtDate(iso){if(!iso)return '—';const d=new Date(iso);return d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}
+function fmtExpiry(my){if(!my)return '—';const [m,y]=my.split('/');const names=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return names[parseInt(m)-1]+' '+y}
+function expiryToISO(my){if(!my)return null;const [m,y]=my.split('/');const d=new Date(parseInt(y),parseInt(m),0);return todayISO(d)}
+function daysToExpiry(my){const iso=expiryToISO(my);if(!iso)return 9999;return daysBetween(iso,todayISO())}
+
+function loadDB(){
+  try{const raw=localStorage.getItem(LS_KEY);if(raw){DB=JSON.parse(raw);return true}}catch(e){}
+  return false;
+}
+function saveDB(){try{localStorage.setItem(LS_KEY,JSON.stringify(DB))}catch(e){toast('Unable to save data. Please check browser storage settings.','error')}}
+
+function seedDB(storeName,owner,apiKey){
+  const sup=[
+    {id:uid(),name:'Religare Pharma',contactPerson:'Mr. Anil Kumar',phone:'9876543210',gstin:'27ABCDE1234F1Z5',address:'12, Pharma Lane',city:'Mumbai',state:'MH',creditDays:30,purchases:[]},
+    {id:uid(),name:'Medline Distributors',contactPerson:'Ms. Reema Shah',phone:'9123456780',gstin:'29MNOPQ5678G2Z1',address:'45, Distributor Hub',city:'Bengaluru',state:'KA',creditDays:45,purchases:[]},
+    {id:uid(),name:'Sigmund Healthcare',contactPerson:'Mr. Vikram Iyer',phone:'9988776655',gstin:'33XYZAB9012H3Z7',address:'Sigmund Tower',city:'Chennai',state:'TN',creditDays:30,purchases:[]},
+  ];
+  const docs=[
+    {id:uid(),name:'Dr. Priya Sharma',specialization:'General Physician',clinic:'City Care Clinic',area:'Andheri West',phone:'9000000001',templates:[
+      {id:uid(),name:'Fever Protocol',medicines:[]}
+    ]},
+    {id:uid(),name:'Dr. Rajiv Menon',specialization:'Diabetologist',clinic:'Menon Diabetes Centre',area:'Bandra',phone:'9000000002',templates:[]},
+  ];
+  const meds=[
+    {name:'Paracetamol 500mg',company:'Cipla',category:'Tablet',schedule:'OTC',hsn:'30049099',gst:5,batches:[
+      {batchNo:'PCT-2024-A',expiry:'12/2027',qty:240,purchaseRate:0.9,mrp:1.5,supplierId:sup[0].id},
+      {batchNo:'PCT-2024-B',expiry:'06/2026',qty:120,purchaseRate:0.95,mrp:1.5,supplierId:sup[1].id}]},
+    {name:'Azithromycin 500mg',company:'Sun Pharma',category:'Tablet',schedule:'H',hsn:'30042039',gst:12,batches:[
+      {batchNo:'AZT-25-1',expiry:fmtExpiryFromDays(25),qty:40,purchaseRate:8,mrp:14,supplierId:sup[0].id}]},
+    {name:'Metformin 500mg',company:'USV',category:'Tablet',schedule:'H',hsn:'30049099',gst:5,batches:[
+      {batchNo:'MTF-A1',expiry:'09/2027',qty:300,purchaseRate:1.2,mrp:2.1,supplierId:sup[1].id},
+      {batchNo:'MTF-A2',expiry:'03/2028',qty:150,purchaseRate:1.25,mrp:2.1,supplierId:sup[1].id}]},
+    {name:'Pantoprazole 40mg',company:'Torrent',category:'Tablet',schedule:'H',hsn:'30049099',gst:12,batches:[
+      {batchNo:'PNT-7B',expiry:'11/2026',qty:80,purchaseRate:3.5,mrp:6,supplierId:sup[0].id}]},
+    {name:'Cetirizine 10mg',company:'Mankind',category:'Tablet',schedule:'OTC',hsn:'30049099',gst:5,batches:[
+      {batchNo:'CTZ-X1',expiry:'05/2027',qty:200,purchaseRate:0.6,mrp:1.2,supplierId:sup[2].id},
+      {batchNo:'CTZ-X2',expiry:'08/2026',qty:80,purchaseRate:0.65,mrp:1.2,supplierId:sup[2].id}]},
+    {name:'Amoxicillin 500mg',company:'Alkem',category:'Capsule',schedule:'H',hsn:'30041019',gst:12,batches:[
+      {batchNo:'AMX-3',expiry:'10/2026',qty:3,purchaseRate:4,mrp:7,supplierId:sup[0].id}]},
+    {name:'Omeprazole 20mg',company:'Cipla',category:'Capsule',schedule:'H',hsn:'30049099',gst:12,batches:[
+      {batchNo:'OMP-9',expiry:'02/2027',qty:120,purchaseRate:2,mrp:3.5,supplierId:sup[1].id}]},
+    {name:'B-Complex Syrup',company:'Abbott',category:'Syrup',schedule:'OTC',hsn:'30045039',gst:0,batches:[
+      {batchNo:'BCS-22',expiry:'07/2027',qty:30,purchaseRate:55,mrp:95,supplierId:sup[2].id},
+      {batchNo:'BCS-23',expiry:'01/2027',qty:18,purchaseRate:55,mrp:95,supplierId:sup[2].id}]},
+    {name:'Atorvastatin 10mg',company:'Pfizer',category:'Tablet',schedule:'H',hsn:'30049099',gst:5,batches:[
+      {batchNo:'ATR-5',expiry:'04/2027',qty:90,purchaseRate:3,mrp:5.5,supplierId:sup[0].id}]},
+    {name:'ORS Powder',company:'Electral',category:'Other',schedule:'OTC',hsn:'30049099',gst:0,batches:[
+      {batchNo:'ORS-A',expiry:'06/2028',qty:60,purchaseRate:15,mrp:22,supplierId:sup[2].id},
+      {batchNo:'ORS-B',expiry:'11/2027',qty:40,purchaseRate:15,mrp:22,supplierId:sup[2].id},
+      {batchNo:'ORS-C',expiry:'03/2026',qty:25,purchaseRate:14,mrp:22,supplierId:sup[2].id}]},
+  ].map(m=>({id:uid(),...m}));
+
+  // seed supplier outstanding
+  sup[0].purchases.push({id:uid(),invoiceNo:'REL-44521',date:inDays(-12),items:[],totalAmount:18500,paidAmount:0,dueDate:inDays(18)});
+  sup[1].purchases.push({id:uid(),invoiceNo:'MED-9921',date:inDays(-25),items:[],totalAmount:12200,paidAmount:6200,dueDate:inDays(5)});
+
+  // 5 seed bills
+  const bills=[];
+  for(let i=4;i>=0;i--){
+    const d=new Date();d.setDate(d.getDate()-i);
+    const m=meds[i%meds.length], b=m.batches[0];
+    const qty=2+i;
+    const sub=qty*b.mrp, gst=sub*m.gst/100, total=Math.round(sub+gst);
+    bills.push({
+      id:uid(),billNo:'MED-2026-'+String(40+i).padStart(4,'0'),
+      date:d.toISOString(),customerName:i%2?'Walk-in':'Mr. Sharma',
+      doctorId:i%2?docs[0].id:null,paymentMode:i%2?'Cash':'UPI',
+      items:[{medicineId:m.id,medicineName:m.name,batchNo:b.batchNo,qty,mrp:b.mrp,purchaseRate:b.purchaseRate,discount:0,gst:m.gst,amount:total}],
+      subtotal:sub,discount:0,gstAmount:gst,total
+    });
+  }
+
+  DB={
+    store:{name:storeName,owner:owner||'',gstin:'',licenseNo:'',address:'',phone:'',email:'',city:'',state:'',pin:'',license20:'',license20Exp:'',license21:'',license21Exp:''},
+    medicines:meds,suppliers:sup,doctors:docs,bills,
+    settings:{billPrefix:'MED',billCounter:45,gstMode:'inclusive',defaultDiscount:0,printFormat:'A5',showMargin:false,autoPrint:false,showDoctor:true,lowStockThreshold:10,apiKey:apiKey||''},
+    notifications:[]
+  };
+  saveDB();
+  computeNotifications();
+}
+
+function fmtExpiryFromDays(n){const d=new Date();d.setDate(d.getDate()+n);return String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear()}
+
+function totalStock(med){return med.batches.reduce((s,b)=>s+b.qty,0)}
+function medById(id){return DB.medicines.find(m=>m.id===id)}
+function supById(id){return DB.suppliers.find(s=>s.id===id)}
+function docById(id){return DB.doctors.find(d=>d.id===id)}
+function isToday(iso){return iso&&iso.slice(0,10)===todayISO()}
+function billsOnDate(iso){return DB.bills.filter(b=>b.date.slice(0,10)===iso)}
+function billsBetween(from,to){return DB.bills.filter(b=>{const d=b.date.slice(0,10);return d>=from&&d<=to})}
+
+function computeNotifications(){
+  const notifs=[];
+  const exp30=[];DB.medicines.forEach(m=>m.batches.forEach(b=>{const d=daysToExpiry(b.expiry);if(d>=0&&d<=30&&b.qty>0)exp30.push({m,b,d})}));
+  if(exp30.length)notifs.push({id:uid(),type:'red',message:`${exp30.length} medicines expire in 30 days`,timestamp:nowISO(),read:false});
+  const low=DB.medicines.filter(m=>{const t=totalStock(m);return t>0&&t<=DB.settings.lowStockThreshold});
+  low.forEach(m=>notifs.push({id:uid(),type:'orange',message:`Stock for ${m.name} is low (${totalStock(m)} units)`,timestamp:nowISO(),read:false}));
+  const zero=DB.medicines.filter(m=>totalStock(m)===0);
+  zero.forEach(m=>notifs.push({id:uid(),type:'blue',message:`${m.name} has 0 units. Reorder now.`,timestamp:nowISO(),read:false}));
+  DB.suppliers.forEach(s=>{const due=s.purchases.reduce((sum,p)=>sum+(p.totalAmount-p.paidAmount),0);if(due>0){const next=s.purchases.find(p=>p.totalAmount>p.paidAmount);const dd=next?daysBetween(next.dueDate,todayISO()):30;notifs.push({id:uid(),type:'yellow',message:`${inr(due)} due to ${s.name} ${dd<0?'(OVERDUE)':'in '+dd+' days'}`,timestamp:nowISO(),read:false})}});
+  if(DB.store.license20Exp){const d=daysBetween(DB.store.license20Exp,todayISO());if(d<=90&&d>=0)notifs.push({id:uid(),type:'white',message:`Drug License (Form 20) expires in ${d} days`,timestamp:nowISO(),read:false})}
+  // merge with existing reads
+  const oldRead=new Set((DB.notifications||[]).filter(n=>n.read).map(n=>n.message));
+  notifs.forEach(n=>{if(oldRead.has(n.message))n.read=true});
+  DB.notifications=notifs;
+  saveDB();
+}
+
+/* =========================================================
+   UI: ROUTER
+   ========================================================= */
+function go(route){
+  STATE.route=route;
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.route===route));
+  closeAll();
+  const r={dashboard:renderDashboard,billing:renderBilling,stock:renderStock,doctors:renderDoctors,reports:renderReports,settings:renderSettings}[route];
+  r&&r();
+  window.scrollTo(0,0);
+}
+
+function closeAll(){
+  document.getElementById('notif-dropdown').classList.add('hidden');
+  document.getElementById('profile-dropdown').classList.add('hidden');
+}
+
+/* =========================================================
+   DASHBOARD
+   ========================================================= */
+function renderDashboard(){
+  const today=todayISO(), yest=inDays(-1);
+  const tBills=billsOnDate(today), yBills=billsOnDate(yest);
+  const tSales=tBills.reduce((s,b)=>s+b.total,0);
+  const ySales=yBills.reduce((s,b)=>s+b.total,0);
+  const tProfit=tBills.reduce((s,b)=>s+b.items.reduce((ss,i)=>ss+(i.mrp-i.purchaseRate)*i.qty,0),0);
+  const margin=tSales?Math.round(tProfit/tSales*100):0;
+  const tItems=tBills.reduce((s,b)=>s+b.items.reduce((ss,i)=>ss+i.qty,0),0);
+  const cash=tBills.filter(b=>b.paymentMode==='Cash').reduce((s,b)=>s+b.total,0);
+  const upi=tBills.filter(b=>b.paymentMode==='UPI').reduce((s,b)=>s+b.total,0);
+  const trend=tSales>=ySales?'<span class="stat-trend up">▲</span>':'<span class="stat-trend down">▼</span>';
+
+  // expiry buckets
+  const ex30=[],ex60=[],ex90=[];
+  DB.medicines.forEach(m=>m.batches.forEach(b=>{const d=daysToExpiry(b.expiry);if(b.qty<=0)return;if(d>=0&&d<=30)ex30.push({m,b,d});else if(d<=60)ex60.push({m,b,d});else if(d<=90)ex90.push({m,b,d})}));
+  const ex60Total=[...ex30,...ex60].reduce((s,x)=>s+x.b.qty*x.b.purchaseRate,0);
+
+  const low=DB.medicines.filter(m=>{const t=totalStock(m);return t>0&&t<=DB.settings.lowStockThreshold});
+  const zero=DB.medicines.filter(m=>totalStock(m)===0);
+  const supplierDue=DB.suppliers.map(s=>({s,due:s.purchases.reduce((sum,p)=>sum+(p.totalAmount-p.paidAmount),0)})).filter(x=>x.due>0);
+  const dueTotal=supplierDue.reduce((s,x)=>s+x.due,0);
+
+  // top selling today
+  const soldMap={};
+  tBills.forEach(b=>b.items.forEach(i=>{soldMap[i.medicineName]=(soldMap[i.medicineName]||0)+i.qty}));
+  const topSold=Object.entries(soldMap).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const maxSold=topSold[0]?topSold[0][1]:1;
+
+  let alertHtml='';
+  if(ex30.length||low.length||zero.length||dueTotal||DB.store.license20Exp){
+    alertHtml=`<div class="alerts-strip">
+      ${ex30.length?`<div class="alert-chip" onclick="go('stock');STATE.stockTab='expiry';renderStock()">🔴 ${ex30.length} medicines expiring in 30 days<span class="cnt">${ex30.length}</span></div>`:''}
+      ${low.length?`<div class="alert-chip" onclick="go('stock')">🟠 ${low.length} medicines low in stock<span class="cnt">${low.length}</span></div>`:''}
+      ${dueTotal?`<div class="alert-chip" onclick="go('stock');STATE.stockTab='suppliers';renderStock()">🟡 ${inr(dueTotal)} due to suppliers</div>`:''}
+      ${zero.length?`<div class="alert-chip" onclick="go('stock')">🔵 ${zero.length} medicines with 0 stock<span class="cnt">${zero.length}</span></div>`:''}
+    </div>`;
+  }
+
+  document.getElementById('content').innerHTML=`
+    <div class="page-head"><h1>Dashboard</h1><div class="text-sm text-muted">${new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div></div>
+    <div class="grid grid-4 mb-4">
+      <div class="stat-card" onclick="go('reports')"><div class="stat-num">${inr(tSales)}${trend}</div><div class="stat-label">Today's Sales</div><div class="stat-sub">${tBills.length} bills generated</div></div>
+      <div class="stat-card" onclick="go('reports')"><div class="stat-num">${inr(tProfit)}</div><div class="stat-label">Today's Profit</div><div class="stat-sub">Margin: ${margin}%</div></div>
+      <div class="stat-card"><div class="stat-num mono">${tItems}</div><div class="stat-label">Items Sold Today</div><div class="stat-sub">Across ${tBills.length} transactions</div></div>
+      <div class="stat-card"><div class="stat-num">${inr(cash+upi)}</div><div class="stat-label">Cash Collected</div><div class="stat-sub"><span class="badge badge-grey">Cash ${inr(cash)}</span> <span class="badge badge-green">UPI ${inr(upi)}</span></div></div>
+    </div>
+    ${alertHtml}
+    <div class="grid grid-2-1 mb-4">
+      <div class="card">
+        <div class="panel-head"><div class="panel-title">📅 Expiry Watch</div><button class="btn btn-sm btn-ghost" onclick="exportPDF('Expiry Watch',buildExpiryReport())">Export PDF</button></div>
+        ${expirySection('Expiring in 30 days',ex30,'red')}
+        ${expirySection('Expiring in 60 days',ex60,'orange')}
+        ${expirySection('Expiring in 90 days',ex90,'yellow')}
+        <div class="mt-3 text-sm"><strong class="mono">${inr(ex60Total)}</strong> worth of inventory expires in the next 60 days.</div>
+      </div>
+      <div class="card">
+        <div class="panel-title mb-3">Quick Actions</div>
+        <div class="grid grid-2 gap-3">
+          <button class="btn btn-outline" style="height:80px;flex-direction:column" onclick="go('stock');STATE.stockTab='scan';renderStock()">📷<div class="text-xs mt-2">Scan Bill</div></button>
+          <button class="btn btn-outline" style="height:80px;flex-direction:column" onclick="go('billing')">🧾<div class="text-xs mt-2">New Sale</div></button>
+          <button class="btn btn-outline" style="height:80px;flex-direction:column" onclick="go('stock')">📋<div class="text-xs mt-2">View Inventory</div></button>
+          <button class="btn btn-outline" style="height:80px;flex-direction:column" onclick="go('reports')">📊<div class="text-xs mt-2">Day Report</div></button>
+        </div>
+      </div>
+    </div>
+    <div class="grid grid-2 mb-4">
+      <div class="card">
+        <div class="panel-title mb-3">Today's Top Selling</div>
+        ${topSold.length?topSold.map(([n,q])=>`<div class="bar-chart-row"><div>${n}</div><div class="bar-bg"><div class="bar-fill" style="width:${q/maxSold*100}%"></div></div><div class="mono fw-700" style="text-align:right">${q}</div></div>`).join(''):'<div class="empty"><div class="empty-icon">📊</div>No sales yet today</div>'}
+      </div>
+      <div class="card">
+        <div class="panel-head"><div class="panel-title">Today's Bills <span class="badge badge-green">${tBills.length}</span></div></div>
+        <div class="table-wrap"><table><thead><tr><th>Bill No</th><th>Time</th><th>Customer</th><th>Items</th><th>Amount</th><th>Pay</th><th></th></tr></thead><tbody>
+        ${tBills.length?tBills.slice(0,10).map(b=>`<tr><td class="mono">${b.billNo}</td><td>${new Date(b.date).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</td><td>${b.customerName||'—'}</td><td>${b.items.length}</td><td class="mono">${inr(b.total)}</td><td><span class="badge ${b.paymentMode==='UPI'?'badge-green':'badge-black'}">${b.paymentMode}</span></td><td><button class="btn btn-sm btn-ghost" onclick="viewBill('${b.id}')">View</button></td></tr>`).join(''):'<tr><td colspan="7" class="empty">No bills today yet.</td></tr>'}
+        </tbody></table></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="panel-head"><div class="panel-title">Credit Due <span class="badge badge-orange">${inr(dueTotal)}</span></div></div>
+      <div class="table-wrap"><table><thead><tr><th>Supplier</th><th>Amount</th><th>Due Date</th><th>Days Left</th><th></th></tr></thead><tbody>
+      ${supplierDue.length?supplierDue.map(x=>{const p=x.s.purchases.find(p=>p.totalAmount>p.paidAmount);const dd=p?daysBetween(p.dueDate,todayISO()):0;const cls=dd<0?'badge-red':dd<7?'badge-orange':'badge-green';return `<tr><td>${x.s.name}</td><td class="mono">${inr(x.due)}</td><td>${p?fmtDate(p.dueDate):'—'}</td><td><span class="badge ${cls}">${dd<0?'Overdue':dd+' days'}</span></td><td><button class="btn btn-sm btn-outline" onclick="payModal('${x.s.id}')">Mark Paid</button></td></tr>`}).join(''):'<tr><td colspan="5" class="empty">All clear — no outstanding dues.</td></tr>'}
+      </tbody></table></div>
+    </div>
+  `;
+}
+
+function expirySection(title,items,color){
+  if(!items.length)return '';
+  const cls=color==='red'?'expiry-row-red':color==='orange'?'expiry-row-orange':'expiry-row-yellow';
+  const bcls=color==='red'?'badge-red':color==='orange'?'badge-orange':'badge-grey';
+  return `<details ${color==='red'?'open':''}><summary style="cursor:pointer;padding:8px 0;display:flex;align-items:center;gap:8px"><span class="fw-600">${title}</span> <span class="badge ${bcls}">${items.length}</span></summary>
+    <div class="table-wrap mt-2"><table><thead><tr><th>Medicine</th><th>Batch</th><th>Qty</th><th>Value</th><th>Days</th><th></th></tr></thead><tbody>
+    ${items.slice(0,8).map(x=>`<tr class="${cls}"><td>${x.m.name}</td><td class="mono">${x.b.batchNo}</td><td>${x.b.qty}</td><td class="mono">${inr(x.b.qty*x.b.purchaseRate)}</td><td><span class="badge ${bcls}">${x.d}d</span></td><td><button class="btn btn-sm btn-ghost" onclick="returnToSupplier('${x.m.id}','${x.b.batchNo}')">Return</button></td></tr>`).join('')}
+    </tbody></table></div></details>`;
+}
+
+function buildExpiryReport(){
+  const rows=[];
+  DB.medicines.forEach(m=>m.batches.forEach(b=>{const d=daysToExpiry(b.expiry);if(b.qty>0&&d<=90){rows.push([m.name,b.batchNo,fmtExpiry(b.expiry),d+'d',b.qty,inr(b.qty*b.purchaseRate),supById(b.supplierId)?.name||'—'])}}));
+  return {headers:['Medicine','Batch','Expiry','Days Left','Qty','Value','Supplier'],rows};
+}
+
+/* =========================================================
+   BILLING
+   ========================================================= */
+function ensureDraft(){
+  if(!STATE.billDraft){
+    const num=DB.settings.billCounter+1;
+    STATE.billDraft={billNo:`${DB.settings.billPrefix}-2026-${String(num).padStart(4,'0')}`,customerName:'',doctorId:'',paymentMode:'Cash',items:[],prescriptionNo:''};
+  }
+}
+
+function renderBilling(){
+  ensureDraft();
+  if(STATE.prefilledBill){
+    STATE.prefilledBill.forEach(p=>{
+      const m=medById(p.medicineId);if(!m)return;
+      const b=m.batches.slice().sort((a,b)=>daysToExpiry(a.expiry)-daysToExpiry(b.expiry)).find(b=>b.qty>=p.qty)||m.batches[0];
+      if(!b)return;
+      STATE.billDraft.items.push({medicineId:m.id,medicineName:m.name,batchNo:b.batchNo,qty:p.qty,mrp:b.mrp,purchaseRate:b.purchaseRate,discount:0,gst:m.gst});
+    });
+    STATE.prefilledBill=null;
+  }
+  const d=STATE.billDraft;
+  document.getElementById('content').innerHTML=`
+    <div class="page-head"><h1>Billing</h1><button class="btn btn-ghost" onclick="newBill()">+ New Bill</button></div>
+    <div class="card mb-4">
+      <div class="grid grid-4 gap-3">
+        <div><label>Bill No</label><div class="mono fw-700" style="padding:10px 0">${d.billNo}</div></div>
+        <div><label>Customer</label><input id="b-cust" value="${d.customerName}" placeholder="Customer name (optional)" oninput="STATE.billDraft.customerName=this.value"/></div>
+        <div><label>Doctor</label><select id="b-doc" onchange="STATE.billDraft.doctorId=this.value"><option value="">—</option>${DB.doctors.map(doc=>`<option value="${doc.id}" ${d.doctorId===doc.id?'selected':''}>${doc.name}</option>`).join('')}</select></div>
+        <div><label>Payment Mode</label><div class="toggle-group">
+          ${['Cash','UPI','Credit'].map(p=>`<button class="${d.paymentMode===p?'active':''}" onclick="STATE.billDraft.paymentMode='${p}';renderBilling()">${p}</button>`).join('')}
+        </div></div>
+      </div>
+    </div>
+    <div class="grid grid-2-1 gap-4">
+      <div>
+        <div class="card mb-4">
+          <div class="search-wrap">
+            <input id="bSearch" placeholder="Search medicine by name or company..." style="height:52px;font-size:15px;border-radius:var(--radius-full);padding-left:20px" oninput="searchMed(this.value)" onkeydown="searchKey(event)" autofocus/>
+            <div id="bDropdown" class="search-dropdown hidden"></div>
+          </div>
+          <div id="medPopup"></div>
+        </div>
+        <div class="card">
+          <div class="panel-title mb-3">Items</div>
+          ${renderItemsTable()}
+        </div>
+      </div>
+      <div class="card" style="position:sticky;top:0;align-self:flex-start">
+        <div class="panel-title mb-3">Bill Summary</div>
+        ${renderSummary()}
+        <button class="btn btn-primary btn-lg mt-3" onclick="generateBill()" ${d.items.length?'':'disabled'}>GENERATE BILL</button>
+        <button class="btn btn-ghost mt-2" style="width:100%" onclick="toast('Saved as draft','info')">Save as Draft</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderItemsTable(){
+  const d=STATE.billDraft;
+  if(!d.items.length)return '<div class="empty"><div class="empty-icon">🛒</div>No medicines added yet. Search above to add items.</div>';
+  return `<div class="table-wrap"><table><thead><tr><th>#</th><th>Medicine</th><th>Batch</th><th>Qty</th><th>MRP</th><th>Disc%</th><th>Amount</th><th></th></tr></thead><tbody>
+    ${d.items.map((it,i)=>{const amt=(it.mrp*it.qty)*(1-it.discount/100);return `<tr><td>${i+1}</td><td>${it.medicineName}</td><td class="mono">${it.batchNo}</td><td><input type="number" min="1" value="${it.qty}" style="width:60px;padding:4px 6px" onchange="updItem(${i},'qty',this.value)"/></td><td class="mono">${inr(it.mrp)}</td><td><input type="number" min="0" max="99" value="${it.discount}" style="width:60px;padding:4px 6px" onchange="updItem(${i},'discount',this.value)"/></td><td class="mono fw-600">${inr(amt)}</td><td><button class="btn btn-sm btn-ghost" onclick="delItem(${i})">🗑️</button></td></tr>`}).join('')}
+  </tbody></table></div>`;
+}
+
+function renderSummary(){
+  const d=STATE.billDraft;
+  let sub=0,gstAmt=0,disc=0;
+  d.items.forEach(it=>{const line=it.mrp*it.qty;const dd=line*it.discount/100;sub+=line-dd;disc+=dd;gstAmt+=(line-dd)*it.gst/100});
+  const total=Math.round((sub+gstAmt)*100)/100;
+  return `<div class="sum-row"><span>Items</span><span class="mono">${d.items.length}</span></div>
+    <div class="sum-row"><span>Subtotal</span><span class="mono">${inr(sub+disc)}</span></div>
+    <div class="sum-row"><span>Discount</span><span class="mono">- ${inr(disc)}</span></div>
+    <div class="sum-row"><span>GST</span><span class="mono">+ ${inr(gstAmt)}</span></div>
+    <div class="sum-row total"><span>TOTAL</span><span class="mono">${inr(total)}</span></div>`;
+}
+
+let _searchKbd=-1;
+function searchMed(q){
+  const dd=document.getElementById('bDropdown');
+  if(q.length<2){dd.classList.add('hidden');return}
+  q=q.toLowerCase();
+  let results=DB.medicines.filter(m=>m.name.toLowerCase().includes(q)||m.company.toLowerCase().includes(q));
+  if(STATE.billDraft.doctorId){
+    const doc=docById(STATE.billDraft.doctorId);
+    const tplMeds=new Set();doc?.templates?.forEach(t=>t.medicines.forEach(x=>tplMeds.add(x.medicineId)));
+    results.sort((a,b)=>(tplMeds.has(b.id)?1:0)-(tplMeds.has(a.id)?1:0));
+  }
+  results=results.slice(0,10);
+  _searchKbd=-1;
+  if(!results.length){dd.innerHTML='<div class="search-item">No medicines found</div>';dd.classList.remove('hidden');return}
+  dd.innerHTML=results.map((m,i)=>{const t=totalStock(m);const stockBadge=t===0?'<span class="badge badge-red">Out of Stock</span>':t<10?`<span class="badge badge-orange">Low: ${t}</span>`:`<span class="badge badge-green">${t} units</span>`;return `<div class="search-item ${t===0?'':'click'}" data-i="${i}" ${t>0?`onclick="selectMed('${m.id}')"`:''}><div><div class="name">${m.name}</div><div class="meta">${m.company} · ${m.schedule}</div></div><div style="text-align:right">${stockBadge}<div class="mono text-xs">${inr(m.batches[0]?.mrp||0)}</div></div></div>`}).join('');
+  dd.classList.remove('hidden');
+  dd._results=results;
+}
+function searchKey(e){
+  const dd=document.getElementById('bDropdown');
+  if(dd.classList.contains('hidden'))return;
+  const r=dd._results||[];
+  if(e.key==='ArrowDown'){e.preventDefault();_searchKbd=Math.min(_searchKbd+1,r.length-1);highlightKbd()}
+  else if(e.key==='ArrowUp'){e.preventDefault();_searchKbd=Math.max(_searchKbd-1,0);highlightKbd()}
+  else if(e.key==='Enter'&&_searchKbd>=0){e.preventDefault();selectMed(r[_searchKbd].id)}
+  else if(e.key==='Escape'){dd.classList.add('hidden')}
+}
+function highlightKbd(){document.querySelectorAll('#bDropdown .search-item').forEach((el,i)=>el.classList.toggle('kbd',i===_searchKbd))}
+
+let _popupMed=null,_popupBatch=null,_popupQty=1,_popupRx='';
+function selectMed(id){
+  document.getElementById('bDropdown').classList.add('hidden');
+  document.getElementById('bSearch').value='';
+  _popupMed=medById(id);
+  _popupBatch=_popupMed.batches.slice().sort((a,b)=>daysToExpiry(a.expiry)-daysToExpiry(b.expiry))[0];
+  _popupQty=1;_popupRx='';
+  renderMedPopup();
+}
+function renderMedPopup(){
+  const m=_popupMed;if(!m){document.getElementById('medPopup').innerHTML='';return}
+  const margin=m.batches[0]?Math.round((m.batches[0].mrp-m.batches[0].purchaseRate)/m.batches[0].mrp*100):0;
+  const needsRx=['H','H1','X'].includes(m.schedule);
+  document.getElementById('medPopup').innerHTML=`<div class="med-popup">
+    <div class="flex justify-between items-center"><div><h3>${m.name}</h3><div class="text-sm text-muted">${m.company}</div></div><button class="btn btn-sm btn-ghost" onclick="_popupMed=null;renderMedPopup()">✕</button></div>
+    <div class="divider"></div>
+    <div class="batch-row head"><div>Batch</div><div>Expiry</div><div>Stock</div><div>Purchase</div><div>MRP</div></div>
+    ${m.batches.map(b=>{const d=daysToExpiry(b.expiry);const exp=d<=90&&d>=0;return `<div class="batch-row ${_popupBatch===b?'selected':''} ${exp?'expiring':''}" onclick="_popupBatch=_popupMed.batches.find(x=>x.batchNo==='${b.batchNo}');renderMedPopup()"><div class="mono">${b.batchNo}</div><div>${fmtExpiry(b.expiry)}</div><div>${b.qty}</div><div class="mono">${inr(b.purchaseRate)}</div><div class="mono">${inr(b.mrp)}</div></div>`}).join('')}
+    <div class="divider"></div>
+    <div class="text-xs text-muted">Margin: ${margin}% · Schedule: ${m.schedule} · GST: ${m.gst}%</div>
+    ${needsRx?`<div class="mt-3" style="background:var(--warning-light);padding:10px;border-radius:var(--radius-sm);font-size:12px">⚠️ Schedule ${m.schedule} Drug — Prescription required.<input class="mt-2" placeholder="Prescription No." value="${_popupRx}" oninput="_popupRx=this.value"/></div>`:''}
+    <div class="flex gap-3 items-center mt-3">
+      <label>Qty</label>
+      <div class="qty-stepper"><button onclick="_popupQty=Math.max(1,_popupQty-1);renderMedPopup()">−</button><input type="number" value="${_popupQty}" min="1" max="${_popupBatch?.qty||1}" onchange="_popupQty=Math.min(${_popupBatch?.qty||1},Math.max(1,parseInt(this.value)||1));renderMedPopup()"/><button onclick="_popupQty=Math.min(${_popupBatch?.qty||1},_popupQty+1);renderMedPopup()">+</button></div>
+      <button class="btn btn-primary" style="flex:1" onclick="addToBill()">Add to Bill</button>
+    </div>
+  </div>`;
+}
+function addToBill(){
+  if(!_popupMed||!_popupBatch)return;
+  if(['H','H1','X'].includes(_popupMed.schedule)&&!_popupRx.trim()){toast('Prescription number required for Schedule '+_popupMed.schedule,'error');return}
+  if(_popupQty>_popupBatch.qty){toast('Quantity exceeds available stock','error');return}
+  STATE.billDraft.items.push({medicineId:_popupMed.id,medicineName:_popupMed.name,batchNo:_popupBatch.batchNo,qty:_popupQty,mrp:_popupBatch.mrp,purchaseRate:_popupBatch.purchaseRate,discount:0,gst:_popupMed.gst,prescriptionNo:_popupRx});
+  _popupMed=null;
+  renderBilling();
+  toast('Added to bill','success');
+}
+function updItem(i,f,v){const n=parseFloat(v)||0;if(f==='qty'){const it=STATE.billDraft.items[i];const m=medById(it.medicineId);const b=m.batches.find(x=>x.batchNo===it.batchNo);if(n>b.qty){toast('Exceeds available stock ('+b.qty+')','error');renderBilling();return}}STATE.billDraft.items[i][f]=n;renderBilling()}
+function delItem(i){STATE.billDraft.items.splice(i,1);renderBilling()}
+function newBill(){if(STATE.billDraft&&STATE.billDraft.items.length){confirmModal(`Current bill has ${STATE.billDraft.items.length} items. Start a new bill?`,()=>{STATE.billDraft=null;renderBilling()})}else{STATE.billDraft=null;renderBilling()}}
+function generateBill(){
+  const d=STATE.billDraft;
+  if(!d.items.length){toast('Add at least one item','error');return}
+  let sub=0,gstAmt=0,disc=0;
+  d.items.forEach(it=>{it.amount=Math.round((it.mrp*it.qty)*(1-it.discount/100)*100)/100;const line=it.mrp*it.qty;const dd=line*it.discount/100;sub+=line-dd;disc+=dd;gstAmt+=(line-dd)*it.gst/100});
+  const total=Math.round((sub+gstAmt)*100)/100;
+  const bill={id:uid(),billNo:d.billNo,date:nowISO(),customerName:d.customerName,doctorId:d.doctorId,paymentMode:d.paymentMode,items:d.items,subtotal:sub+disc,discount:disc,gstAmount:gstAmt,total};
+  DB.bills.push(bill);DB.settings.billCounter++;
+  d.items.forEach(it=>{const m=medById(it.medicineId);const b=m.batches.find(x=>x.batchNo===it.batchNo);if(b)b.qty-=it.qty});
+  DB.notifications.unshift({id:uid(),type:'green',message:`Bill ${bill.billNo} generated successfully`,timestamp:nowISO(),read:false});
+  saveDB();
+  STATE.billDraft=null;
+  showBillPreview(bill);
+  refreshChrome();
+}
+
+function showBillPreview(bill){
+  const doc=docById(bill.doctorId);
+  const html=`<div class="modal modal-lg"><div class="modal-head"><h3>Bill Preview</h3><button class="btn btn-sm btn-ghost" onclick="closeModal()">✕</button></div>
+    <div class="modal-body" id="bill-print">
+      <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:14px">
+        <h2 style="margin-bottom:4px">${DB.store.name||'MediOS Pharmacy'}</h2>
+        <div class="text-sm">${DB.store.address||''} ${DB.store.city||''}</div>
+        <div class="text-xs">GSTIN: ${DB.store.gstin||'—'} · DL: ${DB.store.license20||'—'} · Phone: ${DB.store.phone||'—'}</div>
+      </div>
+      <div class="flex justify-between mb-3"><div><strong>Bill No:</strong> <span class="mono">${bill.billNo}</span><br><strong>Date:</strong> ${new Date(bill.date).toLocaleString('en-IN')}</div><div style="text-align:right"><strong>Customer:</strong> ${bill.customerName||'Walk-in'}<br>${doc?'<strong>Dr:</strong> '+doc.name:''}</div></div>
+      <table style="margin:10px 0"><thead><tr><th>#</th><th>Medicine</th><th>Batch</th><th>Qty</th><th>MRP</th><th>Amount</th></tr></thead><tbody>
+        ${bill.items.map((it,i)=>`<tr><td>${i+1}</td><td>${it.medicineName}</td><td class="mono">${it.batchNo}</td><td>${it.qty}</td><td class="mono">${inr(it.mrp)}</td><td class="mono">${inr(it.amount)}</td></tr>`).join('')}
+      </tbody></table>
+      <div style="text-align:right;margin-top:14px">
+        <div>Subtotal: <span class="mono">${inr(bill.subtotal)}</span></div>
+        <div>Discount: <span class="mono">-${inr(bill.discount)}</span></div>
+        <div>GST: <span class="mono">+${inr(bill.gstAmount)}</span></div>
+        <div style="font-size:22px;font-weight:700;margin-top:8px">TOTAL: <span class="mono">${inr(bill.total)}</span></div>
+        <div class="text-sm mt-2">Paid via: ${bill.paymentMode}</div>
+      </div>
+      <div style="text-align:center;margin-top:24px;border-top:1px solid #ccc;padding-top:10px" class="text-sm">Thank you for your purchase. Get well soon.</div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="window.print()">Print Bill</button></div>
+  </div>`;
+  openModal(html);
+  toast('Bill generated · '+bill.billNo,'success');
+}
+
+function viewBill(id){const b=DB.bills.find(x=>x.id===id);if(b)showBillPreview(b)}
+
+/* =========================================================
+   STOCK
+   ========================================================= */
+function renderStock(){
+  document.getElementById('content').innerHTML=`
+    <div class="page-head"><h1>Stock</h1></div>
+    <div class="tabs">
+      ${['inventory','scan','expiry','suppliers'].map(t=>`<div class="tab ${STATE.stockTab===t?'active':''}" onclick="STATE.stockTab='${t}';renderStock()">${ {inventory:'Inventory',scan:'Scan Bill',expiry:'Expiry',suppliers:'Suppliers'}[t]}</div>`).join('')}
+    </div>
+    <div id="stock-body"></div>`;
+  ({inventory:renderInventory,scan:renderScan,expiry:renderExpiry,suppliers:renderSuppliers}[STATE.stockTab])();
+}
+
+let _invFilter='all',_invSort='name',_invSearch='',_invPage=1;
+function renderInventory(){
+  const body=document.getElementById('stock-body');
+  let list=DB.medicines.slice();
+  if(_invSearch)list=list.filter(m=>m.name.toLowerCase().includes(_invSearch.toLowerCase())||m.company.toLowerCase().includes(_invSearch.toLowerCase()));
+  if(_invFilter==='H')list=list.filter(m=>m.schedule==='H');
+  else if(_invFilter==='H1')list=list.filter(m=>m.schedule==='H1');
+  else if(_invFilter==='X')list=list.filter(m=>m.schedule==='X');
+  else if(_invFilter==='OTC')list=list.filter(m=>m.schedule==='OTC');
+  else if(_invFilter==='low')list=list.filter(m=>{const t=totalStock(m);return t>0&&t<=DB.settings.lowStockThreshold});
+  else if(_invFilter==='zero')list=list.filter(m=>totalStock(m)===0);
+  list.sort((a,b)=>{if(_invSort==='name')return a.name.localeCompare(b.name);if(_invSort==='stock')return totalStock(a)-totalStock(b);if(_invSort==='expiry')return daysToExpiry(a.batches[0]?.expiry)-daysToExpiry(b.batches[0]?.expiry);if(_invSort==='margin'){const ma=a.batches[0]?(a.batches[0].mrp-a.batches[0].purchaseRate)/a.batches[0].mrp:0;const mb=b.batches[0]?(b.batches[0].mrp-b.batches[0].purchaseRate)/b.batches[0].mrp:0;return ma-mb}return 0});
+  const pp=25,total=list.length,pages=Math.max(1,Math.ceil(total/pp));
+  if(_invPage>pages)_invPage=1;
+  const slice=list.slice((_invPage-1)*pp,_invPage*pp);
+
+  body.innerHTML=`<div class="card">
+    <div class="flex gap-3 mb-3" style="flex-wrap:wrap">
+      <input placeholder="Search..." value="${_invSearch}" oninput="_invSearch=this.value;_invPage=1;renderInventory()" style="flex:1;min-width:200px"/>
+      <select onchange="_invFilter=this.value;_invPage=1;renderInventory()">
+        ${['all','H','H1','X','OTC','low','zero'].map(f=>`<option value="${f}" ${_invFilter===f?'selected':''}>${ {all:'All',H:'Schedule H',H1:'Schedule H1',X:'Schedule X',OTC:'OTC',low:'Low Stock',zero:'Zero Stock'}[f]}</option>`).join('')}
+      </select>
+      <select onchange="_invSort=this.value;renderInventory()">
+        ${[['name','Name A-Z'],['expiry','Expiry Soonest'],['stock','Stock Low-High'],['margin','Margin Low-High']].map(([v,l])=>`<option value="${v}" ${_invSort===v?'selected':''}>${l}</option>`).join('')}
+      </select>
+      <button class="btn btn-primary" onclick="medModal()">+ Add Medicine</button>
+      <button class="btn btn-ghost" onclick="exportInventoryCSV()">Export CSV</button>
+    </div>
+    <div class="table-wrap"><table><thead><tr><th>Medicine</th><th>Company</th><th>Batch</th><th>Expiry</th><th>Stock</th><th>Purchase</th><th>MRP</th><th>Margin</th><th>Sch</th><th></th></tr></thead><tbody>
+      ${slice.length?slice.map(m=>{const b=m.batches[0];const t=totalStock(m);const d=b?daysToExpiry(b.expiry):9999;const ec=d<=30?'badge-red':d<=90?'badge-orange':d<=365*5?'badge-green':'badge-grey';const sc=t===0?'badge-red':t<5?'badge-red':t<=20?'badge-orange':'badge-green';const margin=b?Math.round((b.mrp-b.purchaseRate)/b.mrp*100):0;const mc=margin<10?'badge-red':margin<20?'badge-grey':'badge-green';return `<tr style="cursor:pointer" onclick="medDrawer('${m.id}')"><td><strong>${m.name}</strong></td><td>${m.company}</td><td class="mono">${b?.batchNo||'—'}</td><td><span class="badge ${ec}">${b?fmtExpiry(b.expiry):'—'}</span></td><td><span class="badge ${sc}">${t}</span></td><td class="mono">${inr(b?.purchaseRate||0)}</td><td class="mono">${inr(b?.mrp||0)}</td><td><span class="badge ${mc}">${margin}%</span></td><td><span class="badge badge-grey">${m.schedule}</span></td><td onclick="event.stopPropagation()"><button class="btn btn-sm btn-ghost" onclick="medModal('${m.id}')">✏️</button><button class="btn btn-sm btn-ghost" onclick="delMed('${m.id}')">🗑️</button></td></tr>`}).join(''):'<tr><td colspan="10" class="empty"><div class="empty-icon">📦</div>No medicines found. <button class="btn btn-primary btn-sm mt-2" onclick="medModal()">+ Add Medicine</button></td></tr>'}
+    </tbody></table></div>
+    <div class="flex justify-between items-center mt-3 text-sm text-muted">
+      <div>Showing ${slice.length} of ${total}</div>
+      <div class="flex gap-2"><button class="btn btn-sm btn-ghost" onclick="_invPage=Math.max(1,_invPage-1);renderInventory()">Prev</button> Page ${_invPage}/${pages} <button class="btn btn-sm btn-ghost" onclick="_invPage=Math.min(${pages},_invPage+1);renderInventory()">Next</button></div>
+    </div>
+  </div>`;
+}
+
+function exportInventoryCSV(){
+  const rows=[['Medicine','Company','Schedule','Batch','Expiry','Qty','Purchase','MRP']];
+  DB.medicines.forEach(m=>m.batches.forEach(b=>rows.push([m.name,m.company,m.schedule,b.batchNo,fmtExpiry(b.expiry),b.qty,b.purchaseRate,b.mrp])));
+  downloadCSV('inventory.csv',rows);
+  toast('Inventory exported','success');
+}
+
+function medModal(id){
+  const m=id?medById(id):null;
+  const isEdit=!!m;
+  const html=`<div class="modal"><div class="modal-head"><h3>${isEdit?'Edit':'Add'} Medicine</h3><button class="btn btn-sm btn-ghost" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-row"><div><label class="req">Name</label><input id="m-name" value="${m?.name||''}"/></div><div><label class="req">Company</label><input id="m-co" value="${m?.company||''}"/></div></div>
+      <div class="form-row-3">
+        <div><label>Category</label><select id="m-cat">${['Tablet','Capsule','Syrup','Injection','Ointment','Drops','Device','Other'].map(c=>`<option ${m?.category===c?'selected':''}>${c}</option>`).join('')}</select></div>
+        <div><label>Schedule</label><select id="m-sch">${['OTC','H','H1','X'].map(c=>`<option ${m?.schedule===c?'selected':''}>${c}</option>`).join('')}</select></div>
+        <div><label>GST %</label><select id="m-gst">${[0,5,12,18].map(g=>`<option value="${g}" ${m?.gst===g?'selected':''}>${g}%</option>`).join('')}</select></div>
+      </div>
+      <div class="form-field"><label>HSN Code</label><input id="m-hsn" value="${m?.hsn||''}"/></div>
+      <h4 class="mt-3 mb-2">Batch</h4>
+      <div class="form-row-3"><div><label class="req">Batch No</label><input id="m-bn" value="${m?.batches[0]?.batchNo||''}"/></div><div><label class="req">Expiry (MM/YYYY)</label><input id="m-exp" placeholder="12/2027" value="${m?.batches[0]?.expiry||''}"/></div><div><label class="req">Qty</label><input id="m-qty" type="number" value="${m?.batches[0]?.qty||0}"/></div></div>
+      <div class="form-row"><div><label class="req">Purchase ₹</label><input id="m-pr" type="number" step="0.01" value="${m?.batches[0]?.purchaseRate||0}"/></div><div><label class="req">MRP ₹</label><input id="m-mrp" type="number" step="0.01" value="${m?.batches[0]?.mrp||0}"/></div></div>
+      <div class="form-field"><label>Supplier</label><select id="m-sup"><option value="">—</option>${DB.suppliers.map(s=>`<option value="${s.id}" ${m?.batches[0]?.supplierId===s.id?'selected':''}>${s.name}</option>`).join('')}</select></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveMed('${id||''}')">Save Medicine</button></div>
+  </div>`;
+  openModal(html);
+}
+function saveMed(id){
+  const g=i=>document.getElementById(i).value;
+  const name=g('m-name').trim();if(!name)return toast('Name required','error');
+  const co=g('m-co').trim();if(!co)return toast('Company required','error');
+  const bn=g('m-bn').trim();if(!bn)return toast('Batch required','error');
+  const exp=g('m-exp').trim();if(!/^\d{2}\/\d{4}$/.test(exp))return toast('Expiry format MM/YYYY','error');
+  if(daysToExpiry(exp)<0)return toast('Expiry cannot be in the past','error');
+  const qty=parseInt(g('m-qty'));if(qty<=0)return toast('Qty must be > 0','error');
+  const pr=parseFloat(g('m-pr')),mrp=parseFloat(g('m-mrp'));
+  if(pr>mrp)return toast('Purchase rate cannot exceed MRP','error');
+  const batch={batchNo:bn,expiry:exp,qty,purchaseRate:pr,mrp,supplierId:g('m-sup')};
+  const data={name,company:co,category:g('m-cat'),schedule:g('m-sch'),gst:parseInt(g('m-gst')),hsn:g('m-hsn')};
+  if(id){const m=medById(id);Object.assign(m,data);if(m.batches.length)m.batches[0]=batch;else m.batches=[batch]}
+  else DB.medicines.push({id:uid(),...data,batches:[batch]});
+  saveDB();closeModal();renderInventory();toast('Medicine saved','success');
+}
+function delMed(id){confirmModal('Delete this medicine and all its batches?',()=>{DB.medicines=DB.medicines.filter(m=>m.id!==id);saveDB();renderInventory();toast('Deleted','success')})}
+
+function medDrawer(id){
+  const m=medById(id);
+  const html=`<div class="modal modal-lg"><div class="modal-head"><div><h3>${m.name}</h3><div class="text-sm text-muted">${m.company} · ${m.schedule} · GST ${m.gst}%</div></div><button class="btn btn-sm btn-ghost" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <h4 class="mb-2">All Batches</h4>
+      <div class="table-wrap"><table><thead><tr><th>Batch</th><th>Expiry</th><th>Qty</th><th>Purchase</th><th>MRP</th><th>Supplier</th></tr></thead><tbody>
+        ${m.batches.map(b=>`<tr><td class="mono">${b.batchNo}</td><td>${fmtExpiry(b.expiry)}</td><td>${b.qty}</td><td class="mono">${inr(b.purchaseRate)}</td><td class="mono">${inr(b.mrp)}</td><td>${supById(b.supplierId)?.name||'—'}</td></tr>`).join('')}
+      </tbody></table></div>
+      <h4 class="mt-4 mb-2">Recent Sales</h4>
+      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Bill</th><th>Qty</th></tr></thead><tbody>
+        ${(()=>{const rows=[];DB.bills.forEach(b=>b.items.forEach(it=>{if(it.medicineId===id)rows.push([fmtDate(b.date),b.billNo,it.qty])}));return rows.length?rows.slice(-5).reverse().map(r=>`<tr><td>${r[0]}</td><td class="mono">${r[1]}</td><td>${r[2]}</td></tr>`).join(''):'<tr><td colspan="3" class="empty">No sales yet</td></tr>'})()}
+      </tbody></table></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="closeModal();medModal('${id}')">Edit Medicine</button></div>
+  </div>`;
+  openModal(html);
+}
+
+/* SCAN BILL */
+let _scanImg=null,_scanData=null;
+function renderScan(){
+  document.getElementById('stock-body').innerHTML=`<div class="card">
+    <div class="panel-title mb-3">📷 Scan Supplier Bill</div>
+    <div class="upload-zone ${_scanImg?'has-img':''}" onclick="document.getElementById('scanFile').click()">
+      ${_scanImg?`<img src="${_scanImg}"/><div class="mt-2 text-sm"><a href="#" onclick="_scanImg=null;_scanData=null;renderScan();return false">Change</a></div>`:'<div style="font-size:48px">📷</div><div class="mt-2">Click to take photo or drag & drop image here</div>'}
+    </div>
+    <input id="scanFile" type="file" accept="image/*" capture="environment" class="hidden" onchange="handleScanFile(this)"/>
+    ${_scanImg&&!_scanData?'<button class="btn btn-primary btn-lg mt-3" id="scanBtn" onclick="runScan()">Scan & Extract</button>':''}
+    ${_scanData?renderScanReview():''}
+  </div>`;
+}
+function handleScanFile(input){const f=input.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{_scanImg=r.result;_scanData=null;renderScan()};r.readAsDataURL(f)}
+async function runScan(){
+  if(!DB.settings.apiKey){toast('Add your Anthropic API key in Settings first','error');return}
+  const btn=document.getElementById('scanBtn');btn.disabled=true;btn.innerHTML='⏳ Analysing bill...';
+  try{
+    const b64=_scanImg.split(',')[1];
+    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':DB.settings.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4096,messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:'image/jpeg',data:b64}},{type:'text',text:`Extract all line items from this supplier bill. Return ONLY valid JSON with this shape:
+{"supplier_name":string,"invoice_number":string,"invoice_date":"DD/MM/YYYY","items":[{"medicine_name":string,"company":string,"batch_number":string,"expiry_date":"MM/YYYY","quantity":number,"purchase_rate":number,"mrp":number,"gst_percent":number,"discount_percent":number,"hsn_code":string}]}
+No markdown, no explanation.`}]}]})});
+    const j=await r.json();
+    let txt=j.content?.[0]?.text||'';
+    txt=txt.replace(/```json|```/g,'').trim();
+    _scanData=JSON.parse(txt);
+    renderScan();
+    toast('Bill extracted — review and confirm','success');
+  }catch(e){
+    console.error(e);
+    toast('Could not read this image clearly. Please try a clearer photo or add items manually.','error');
+    btn.disabled=false;btn.innerHTML='Scan & Extract';
+  }
+}
+function renderScanReview(){
+  const d=_scanData;
+  const items=d.items||[];
+  items.forEach(it=>{it._match=DB.medicines.find(m=>m.name.toLowerCase()===(it.medicine_name||'').toLowerCase());it._keep=it._keep!==false});
+  const total=items.reduce((s,i)=>s+(i.quantity*i.purchase_rate),0);
+  const matched=items.filter(i=>i._match).length;
+  return `<div class="mt-4">
+    <div class="form-row-3">
+      <div><label>Supplier</label><select onchange="_scanData.supplier_id=this.value"><option value="">— Select —</option>${DB.suppliers.map(s=>`<option value="${s.id}" ${(d.supplier_name||'').toLowerCase().includes(s.name.toLowerCase())?'selected':''}>${s.name}</option>`).join('')}</select></div>
+      <div><label>Invoice No</label><input value="${d.invoice_number||''}" oninput="_scanData.invoice_number=this.value"/></div>
+      <div><label>Invoice Date</label><input value="${d.invoice_date||''}" oninput="_scanData.invoice_date=this.value"/></div>
+    </div>
+    <div class="table-wrap"><table><thead><tr><th></th><th>Medicine</th><th>Company</th><th>Batch</th><th>Expiry</th><th>Qty</th><th>Purchase</th><th>MRP</th><th>GST%</th><th>Match</th><th></th></tr></thead><tbody>
+      ${items.map((it,i)=>`<tr><td><input type="checkbox" ${it._keep?'checked':''} onchange="_scanData.items[${i}]._keep=this.checked"/></td>
+        <td><input value="${it.medicine_name||''}" oninput="_scanData.items[${i}].medicine_name=this.value" style="min-width:140px"/></td>
+        <td><input value="${it.company||''}" oninput="_scanData.items[${i}].company=this.value"/></td>
+        <td><input value="${it.batch_number||''}" oninput="_scanData.items[${i}].batch_number=this.value"/></td>
+        <td><input value="${it.expiry_date||''}" oninput="_scanData.items[${i}].expiry_date=this.value" style="width:90px"/></td>
+        <td><input type="number" value="${it.quantity||0}" oninput="_scanData.items[${i}].quantity=parseInt(this.value)||0" style="width:60px"/></td>
+        <td><input type="number" step="0.01" value="${it.purchase_rate||0}" oninput="_scanData.items[${i}].purchase_rate=parseFloat(this.value)||0" style="width:80px"/></td>
+        <td><input type="number" step="0.01" value="${it.mrp||0}" oninput="_scanData.items[${i}].mrp=parseFloat(this.value)||0" style="width:80px"/></td>
+        <td><input type="number" value="${it.gst_percent||0}" oninput="_scanData.items[${i}].gst_percent=parseInt(this.value)||0" style="width:50px"/></td>
+        <td>${it._match?'<span class="badge badge-green">✓ Match</span>':'<span class="badge badge-orange">⚠ New</span>'}</td>
+        <td><button class="btn btn-sm btn-ghost" onclick="_scanData.items.splice(${i},1);renderScan()">🗑️</button></td></tr>`).join('')}
+    </tbody></table></div>
+    <button class="btn btn-ghost btn-sm mt-2" onclick="_scanData.items.push({medicine_name:'',company:'',batch_number:'',expiry_date:'',quantity:0,purchase_rate:0,mrp:0,gst_percent:5,_keep:true});renderScan()">+ Add Row</button>
+    <div class="flex justify-between items-center mt-4">
+      <div class="text-sm">Extracted ${items.length} items · <span class="badge badge-green">${matched} matched</span> <span class="badge badge-orange">${items.length-matched} new</span> · Total: <strong class="mono">${inr(total)}</strong></div>
+      <div class="flex gap-2"><button class="btn btn-ghost" onclick="_scanImg=null;_scanData=null;renderScan()">Cancel</button><button class="btn btn-primary" onclick="commitScan()">Add to Inventory</button></div>
+    </div>
+  </div>`;
+}
+function commitScan(){
+  const items=(_scanData.items||[]).filter(i=>i._keep&&i.medicine_name);
+  if(!items.length){toast('No items to add','error');return}
+  let added=0;
+  items.forEach(it=>{
+    let m=DB.medicines.find(x=>x.name.toLowerCase()===it.medicine_name.toLowerCase());
+    const batch={batchNo:it.batch_number||'B-'+uid().slice(0,5),expiry:it.expiry_date,qty:it.quantity,purchaseRate:it.purchase_rate,mrp:it.mrp,supplierId:_scanData.supplier_id||''};
+    if(m){m.batches.push(batch)}
+    else{DB.medicines.push({id:uid(),name:it.medicine_name,company:it.company||'',category:'Tablet',schedule:'OTC',gst:it.gst_percent||5,hsn:it.hsn_code||'',batches:[batch]})}
+    added++;
+  });
+  // record purchase to supplier
+  if(_scanData.supplier_id){const s=supById(_scanData.supplier_id);if(s){const total=items.reduce((sum,i)=>sum+i.quantity*i.purchase_rate,0);s.purchases.push({id:uid(),invoiceNo:_scanData.invoice_number||'AUTO',date:nowISO(),items:items.map(i=>({name:i.medicine_name,qty:i.quantity,rate:i.purchase_rate})),totalAmount:total,paidAmount:0,dueDate:inDays(s.creditDays)})}}
+  saveDB();computeNotifications();
+  _scanImg=null;_scanData=null;renderScan();refreshChrome();
+  toast('✓ '+added+' medicines added to inventory','success');
+}
+
+/* EXPIRY */
+let _expFilter='all';
+function renderExpiry(){
+  const buckets={r30:[],r60:[],r90:[],exp:[]};
+  DB.medicines.forEach(m=>m.batches.forEach(b=>{if(b.qty<=0)return;const d=daysToExpiry(b.expiry);if(d<0)buckets.exp.push({m,b,d});else if(d<=30)buckets.r30.push({m,b,d});else if(d<=60)buckets.r60.push({m,b,d});else if(d<=90)buckets.r90.push({m,b,d})}));
+  const v=arr=>arr.reduce((s,x)=>s+x.b.qty*x.b.purchaseRate,0);
+  let list=[...buckets.r30,...buckets.r60,...buckets.r90,...buckets.exp];
+  if(_expFilter==='30')list=buckets.r30;else if(_expFilter==='60')list=buckets.r60;else if(_expFilter==='90')list=buckets.r90;else if(_expFilter==='exp')list=buckets.exp;
+  list.sort((a,b)=>a.d-b.d);
+  document.getElementById('stock-body').innerHTML=`
+    <div class="grid grid-4 mb-3">
+      <div class="stat-card" onclick="_expFilter='30';renderExpiry()" style="border-left:3px solid var(--danger)"><div class="stat-num mono">${buckets.r30.length}</div><div class="stat-label">≤ 30 days</div><div class="stat-sub mono">${inr(v(buckets.r30))}</div></div>
+      <div class="stat-card" onclick="_expFilter='60';renderExpiry()" style="border-left:3px solid var(--warning)"><div class="stat-num mono">${buckets.r60.length}</div><div class="stat-label">31–60 days</div><div class="stat-sub mono">${inr(v(buckets.r60))}</div></div>
+      <div class="stat-card" onclick="_expFilter='90';renderExpiry()" style="border-left:3px solid #ca8a04"><div class="stat-num mono">${buckets.r90.length}</div><div class="stat-label">61–90 days</div><div class="stat-sub mono">${inr(v(buckets.r90))}</div></div>
+      <div class="stat-card" onclick="_expFilter='exp';renderExpiry()" style="border-left:3px solid #222"><div class="stat-num mono">${buckets.exp.length}</div><div class="stat-label">Expired</div><div class="stat-sub mono">${inr(v(buckets.exp))}</div></div>
+    </div>
+    <div class="card">
+      <div class="flex justify-between mb-3"><div class="panel-title">Expiry List ${_expFilter!=='all'?`<button class="btn btn-sm btn-ghost" onclick="_expFilter='all';renderExpiry()">Clear filter</button>`:''}</div><button class="btn btn-ghost" onclick="exportPDF('Expiry Report',buildExpiryReport())">Export PDF</button></div>
+      <div class="table-wrap"><table><thead><tr><th>Medicine</th><th>Batch</th><th>Expiry</th><th>Days</th><th>Qty</th><th>Value</th><th>Supplier</th><th></th></tr></thead><tbody>
+      ${list.length?list.map(x=>{const cls=x.d<0?'expiry-row-red':x.d<=30?'expiry-row-red':x.d<=60?'expiry-row-orange':'expiry-row-yellow';return `<tr class="${cls}"><td>${x.m.name}</td><td class="mono">${x.b.batchNo}</td><td>${fmtExpiry(x.b.expiry)}</td><td><strong>${x.d<0?'Expired':x.d+' days'}</strong></td><td>${x.b.qty}</td><td class="mono">${inr(x.b.qty*x.b.purchaseRate)}</td><td>${supById(x.b.supplierId)?.name||'—'}</td><td><button class="btn btn-sm btn-outline" onclick="returnToSupplier('${x.m.id}','${x.b.batchNo}')">Return</button> <button class="btn btn-sm btn-ghost" onclick="discountModal('${x.m.id}','${x.b.batchNo}')">Discount</button></td></tr>`}).join(''):'<tr><td colspan="8" class="empty">✓ No expiry issues.</td></tr>'}
+      </tbody></table></div>
+    </div>`;
+}
+function discountModal(mid,bn){
+  openModal(`<div class="modal modal-sm"><div class="modal-head"><h3>Apply Discount</h3><button class="btn btn-sm btn-ghost" onclick="closeModal()">✕</button></div>
+    <div class="modal-body"><label>Discount %</label><input id="dsc" type="number" min="0" max="99" value="20"/></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="(()=>{const d=parseInt(document.getElementById('dsc').value);const m=medById('${mid}');const b=m.batches.find(x=>x.batchNo==='${bn}');b.discount=d;saveDB();closeModal();toast('Discount applied','success')})()">Apply</button></div>
+  </div>`);
+}
+function returnToSupplier(mid,bn){
+  const m=medById(mid);const b=m.batches.find(x=>x.batchNo===bn);
+  openModal(`<div class="modal modal-sm"><div class="modal-head"><h3>Return to Supplier</h3><button class="btn btn-sm btn-ghost" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="text-sm mb-2"><strong>${m.name}</strong> · ${b.batchNo} · Supplier: ${supById(b.supplierId)?.name||'—'}</div>
+      <label>Return Qty (max ${b.qty})</label><input id="rq" type="number" max="${b.qty}" value="${b.qty}"/>
+      <label class="mt-3">Reason</label><select id="rr"><option>Near Expiry</option><option>Damaged</option><option>Excess Stock</option><option>Other</option></select>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-outline" onclick="genDebitNote('${mid}','${bn}')">Generate Debit Note</button><button class="btn btn-primary" onclick="doReturn('${mid}','${bn}')">Confirm Return</button></div>
+  </div>`);
+}
+function doReturn(mid,bn){
+  const q=parseInt(document.getElementById('rq').value)||0;
+  if(!q)return toast('Enter return qty','error');
+  const m=medById(mid);const b=m.batches.find(x=>x.batchNo===bn);
+  if(q>b.qty)return toast('Exceeds available qty','error');
+  b.qty-=q;
+  saveDB();closeModal();renderExpiry();
+  toast(`Returned ${q} units to supplier`,'success');
+}
+function genDebitNote(mid,bn){
+  const q=parseInt(document.getElementById('rq').value)||0;
+  const m=medById(mid);const b=m.batches.find(x=>x.batchNo===bn);const s=supById(b.supplierId);
+  openModal(`<div class="modal"><div class="modal-head"><h3>Debit Note</h3><button class="btn btn-sm btn-ghost" onclick="closeModal()">✕</button></div>
+    <div class="modal-body" id="dn">
+      <h2 style="text-align:center">DEBIT NOTE</h2>
+      <div class="mt-3"><strong>To:</strong> ${s?.name||'Supplier'}<br>${s?.address||''}</div>
+      <div class="mt-2"><strong>From:</strong> ${DB.store.name}</div>
+      <div class="mt-2"><strong>DN No:</strong> DN-${Date.now().toString().slice(-6)} · <strong>Date:</strong> ${fmtDate(todayISO())}</div>
+      <table class="mt-3"><thead><tr><th>Medicine</th><th>Batch</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead><tbody>
+        <tr><td>${m.name}</td><td class="mono">${b.batchNo}</td><td>${q}</td><td class="mono">${inr(b.purchaseRate)}</td><td class="mono">${inr(q*b.purchaseRate)}</td></tr>
+      </tbody></table>
+      <div class="mt-3" style="text-align:right;font-size:18px;font-weight:700">Total: ${inr(q*b.purchaseRate)}</div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="window.print()">Print</button></div>
+  </div>`);
+}
+
+/* SUPPLIERS */
+function renderSuppliers(){
+  if(!STATE.selectedSupplier&&DB.suppliers.length)STATE.selectedSupplier=DB.suppliers[0].id;
+  const sel=supById(STATE.selectedSupplier);
+  document.getElementById('stock-body').innerHTML=`<div class="grid" style="grid-template-columns:300px 1fr;gap:16px">
+    <div class="card" style="padding:0">
+      <div style="padding:12px;border-bottom:1px solid var(--border)"><button class="btn btn-primary" style="width:100%" onclick="supModal()">+ Add Supplier</button></div>
+      <div style="max-height:600px;overflow:auto">
+        ${DB.suppliers.map(s=>{const total=s.purchases.reduce((a,p)=>a+p.totalAmount,0);const due=s.purchases.reduce((a,p)=>a+(p.totalAmount-p.paidAmount),0);return `<div style="padding:14px;border-bottom:1px solid var(--surface-alt);cursor:pointer;border-left:2px solid ${STATE.selectedSupplier===s.id?'var(--primary)':'transparent'};background:${STATE.selectedSupplier===s.id?'var(--primary-light)':'transparent'}" onclick="STATE.selectedSupplier='${s.id}';renderSuppliers()">
+          <div class="fw-600">${s.name}</div><div class="text-xs text-muted">${s.city||''}</div>
+          <div class="text-xs mt-2">Total: <span class="mono">${inr(total)}</span> ${due>0?`<span class="badge badge-red">Due ${inr(due)}</span>`:''}</div>
+        </div>`}).join('')}
+      </div>
+    </div>
+    <div>${sel?supplierDetail(sel):'<div class="card empty">Select a supplier</div>'}</div>
+  </div>`;
+}
+function supplierDetail(s){
+  const total=s.purchases.reduce((a,p)=>a+p.totalAmount,0);
+  const due=s.purchases.reduce((a,p)=>a+(p.totalAmount-p.paidAmount),0);
+  return `<div class="card">
+    <div class="flex justify-between"><div><h2>${s.name}</h2><div class="text-sm text-muted">${s.phone} · GST ${s.gstin||'—'} · ${s.city||''}</div></div>
+    <button class="btn btn-ghost btn-sm" onclick="supModal('${s.id}')">Edit</button></div>
+    <div class="grid grid-3 mt-4 mb-4">
+      <div><div class="text-xs text-muted">Lifetime Purchase</div><div class="mono fw-700 text-lg">${inr(total)}</div></div>
+      <div><div class="text-xs text-muted">Outstanding</div><div class="mono fw-700 text-lg" style="color:${due>0?'var(--danger)':'var(--success)'}">${inr(due)}</div></div>
+      <div><div class="text-xs text-muted">Credit Period</div><div class="mono fw-700 text-lg">${s.creditDays} days</div></div>
+    </div>
+    ${due>0?`<button class="btn btn-primary mb-3" onclick="payModal('${s.id}')">Mark Payment</button>`:''}
+    <h4 class="mb-2">Purchase History</h4>
+    <div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Date</th><th>Total</th><th>Outstanding</th><th>Status</th></tr></thead><tbody>
+      ${s.purchases.length?s.purchases.map(p=>{const out=p.totalAmount-p.paidAmount;const st=out===0?'Paid':p.paidAmount>0?'Partial':'Due';const c=st==='Paid'?'badge-green':st==='Partial'?'badge-orange':'badge-red';return `<tr><td class="mono">${p.invoiceNo}</td><td>${fmtDate(p.date)}</td><td class="mono">${inr(p.totalAmount)}</td><td class="mono">${inr(out)}</td><td><span class="badge ${c}">${st}</span></td></tr>`}).join(''):'<tr><td colspan="5" class="empty">No purchases yet</td></tr>'}
+    </tbody></table></div>
+  </div>`;
+}
+function supModal(id){
+  const s=id?supById(id):null;
+  openModal(`<div class="modal"><div class="modal-head"><h3>${s?'Edit':'Add'} Supplier</h3><button class="btn btn-sm btn-ghost" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-row"><div><label class="req">Name</label><input id="s-n" value="${s?.name||''}"/></div><div><label>Contact</label><input id="s-c" value="${s?.contactPerson||''}"/></div></div>
+      <div class="form-row"><div><label>Phone</label><input id="s-p" value="${s?.phone||''}"/></div><div><label>GSTIN</label><input id="s-g" value="${s?.gstin||''}"/></div></div>
+      <div class="form-field"><label>Address</label><textarea id="s-a">${s?.address||''}</textarea></div>
+      <div class="form-row"><div><label>City</label><input id="s-ci" value="${s?.city||''}"/></div><div><label>State</label><input id="s-st" value="${s?.state||''}"/></div></div>
+      <div class="form-field"><label>Credit Period (days)</label><input id="s-cd" type="number" value="${s?.creditDays||30}"/></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveSup('${id||''}')">Save</button></div>
+  </div>`);
+}
+function saveSup(id){
+  const g=i=>document.getElementById(i).value;
+  const name=g('s-n').trim();if(!name)return toast('Name required','error');
+  const phone=g('s-p').trim();if(phone&&!/^[6-9]\d{9}$/.test(phone))return toast('Invalid Indian phone','error');
+  const gstin=g('s-g').trim();if(gstin&&gstin.length!==15)return toast('GSTIN must be 15 chars','error');
+  const data={name,contactPerson:g('s-c'),phone,gstin,address:g('s-a'),city:g('s-ci'),state:g('s-st'),creditDays:parseInt(g('s-cd'))||30};
+  if(id)Object.assign(supById(id),data);else DB.suppliers.push({id:uid(),...data,purchases:[]});
+  saveDB();closeModal();renderSuppliers();toast('Supplier saved','success');
+}
+function payModal(sid){
+  const s=supById(sid);
+  const due=s.purchases.reduce((a,p)=>a+(p.totalAmount-p.paidAmount),0);
+  openModal(`<div class="modal modal-sm"><div class="modal-head"><h3>Mark Payment</h3><button class="btn btn-sm btn-ghost" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="text-sm mb-2">${s.name} · Outstanding: <strong class="mono">${inr(due)}</strong></div>
+      <label>Amount</label><input id="p-a" type="number" value="${due}"/>
+      <label class="mt-3">Mode</label><select id="p-m"><option>Cash</option><option>UPI</option><option>NEFT</option><option>Cheque</option></select>
+      <label class="mt-3">Reference (optional)</label><input id="p-r"/>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="doPay('${sid}')">Confirm Payment</button></div>
+  </div>`);
+}
+function doPay(sid){
+  const s=supById(sid);let amt=parseFloat(document.getElementById('p-a').value)||0;
+  if(!amt)return toast('Enter amount','error');
+  for(const p of s.purchases){if(amt<=0)break;const out=p.totalAmount-p.paidAmount;if(out<=0)continue;const pay=Math.min(out,amt);p.paidAmount+=pay;amt-=pay}
+  saveDB();computeNotifications();closeModal();
+  if(STATE.route==='dashboard')renderDashboard();else renderSuppliers();
+  refreshChrome();
+  toast('Payment recorded','success');
+}
+
+/* =========================================================
+   DOCTORS
+   ========================================================= */
+let _docTab='templates';
+function renderDoctors(){
+  if(!STATE.selectedDoctor&&DB.doctors.length)STATE.selectedDoctor=DB.doctors[0].id;
+  const sel=docById(STATE.selectedDoctor);
+  document.getElementById('content').innerHTML=`
+    <div class="page-head"><h1>Doctors</h1></div>
+    <div class="grid" style="grid-template-columns:300px 1fr;gap:16px">
+      <div class="card" style="padding:0">
+        <div style="padding:12px;border-bottom:1px solid var(--border)"><button class="btn btn-primary" style="width:100%" onclick="docModal()">+ Add Doctor</button></div>
+        <div style="max-height:600px;overflow:auto">
+          ${DB.doctors.map(d=>{const cnt=DB.bills.filter(b=>b.doctorId===d.id).length;return `<div style="padding:14px;border-bottom:1px solid var(--surface-alt);cursor:pointer;border-left:2px solid ${STATE.selectedDoctor===d.id?'var(--primary)':'transparent'};background:${STATE.selectedDoctor===d.id?'var(--primary-light)':''}" onclick="STATE.selectedDoctor='${d.id}';renderDoctors()">
+            <div class="fw-600">${d.name}</div><div class="text-xs text-muted">${d.specialization}</div><div class="text-xs text-muted mt-1">${d.clinic||''} · ${cnt} bills</div>
+          </div>`}).join('')||'<div class="empty">No doctors yet</div>'}
+        </div>
+      </div>
+      <div>${sel?doctorDetail(sel):'<div class="card empty">Select a doctor</div>'}</div>
+    </div>`;
+}
+function doctorDetail(d){
+  const bills=DB.bills.filter(b=>b.doctorId===d.id);
+  const schH=[];bills.forEach(b=>b.items.forEach(it=>{const m=medById(it.medicineId);if(m&&['H','H1','X'].includes(m.schedule))schH.push({b,it,m})}));
+  return `<div class="card">
+    <div class="flex justify-between mb-3"><div><h2>${d.name}</h2><div class="text-sm"><span class="badge badge-green">${d.specialization}</span> · ${d.clinic||''} · ${d.area||''}</div></div><button class="btn btn-sm btn-ghost" onclick="docModal('${d.id}')">Edit</button></div>
+    <div class="tabs">
+      ${['templates','history','compliance'].map(t=>`<div class="tab ${_docTab===t?'active':''}" onclick="_docTab='${t}';renderDoctors()">${ {templates:'Prescription Templates',history:'Prescription History',compliance:'Schedule H Compliance'}[t]}</div>`).join('')}
+    </div>
+    ${_docTab==='templates'?`
+      <button class="btn btn-primary mb-3" onclick="tplModal('${d.id}')">+ Create Template</button>
+      ${d.templates&&d.templates.length?d.templates.map(t=>`<div class="card mb-2" style="border:1px solid var(--border);box-shadow:none">
+        <div class="flex justify-between"><div><h4>${t.name}</h4><div class="text-xs text-muted mt-1">${t.medicines.length} medicines</div></div>
+        <div class="flex gap-2"><button class="btn btn-sm btn-outline" onclick="useTemplate('${d.id}','${t.id}')">Use in Billing</button><button class="btn btn-sm btn-ghost" onclick="delTpl('${d.id}','${t.id}')">🗑️</button></div></div>
+        ${t.medicines.length?`<div class="mt-2 text-sm">${t.medicines.map(x=>{const m=medById(x.medicineId);return m?`<span class="badge badge-grey" style="margin:2px">${m.name} ×${x.defaultQty}</span>`:''}).join('')}</div>`:''}
+      </div>`).join(''):'<div class="empty">No templates yet</div>'}`:''}
+    ${_docTab==='history'?`<div class="table-wrap"><table><thead><tr><th>Date</th><th>Bill</th><th>Customer</th><th>Items</th><th>Amount</th></tr></thead><tbody>
+      ${bills.length?bills.map(b=>`<tr style="cursor:pointer" onclick="viewBill('${b.id}')"><td>${fmtDate(b.date)}</td><td class="mono">${b.billNo}</td><td>${b.customerName||'—'}</td><td>${b.items.length}</td><td class="mono">${inr(b.total)}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">No prescriptions yet</td></tr>'}
+    </tbody></table></div>`:''}
+    ${_docTab==='compliance'?`<div class="flex justify-between mb-2"><div class="text-sm text-muted">${schH.length} schedule drug sales</div><button class="btn btn-sm btn-ghost" onclick="exportPDF('Schedule H Compliance — '+'${d.name}',{headers:['Date','Medicine','Schedule','Bill'],rows:${JSON.stringify(schH.map(x=>[fmtDate(x.b.date),x.m.name,x.m.schedule,x.b.billNo]))}})">Export PDF</button></div>
+      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Medicine</th><th>Sch</th><th>Bill</th></tr></thead><tbody>
+      ${schH.length?schH.map(x=>`<tr><td>${fmtDate(x.b.date)}</td><td>${x.m.name}</td><td><span class="badge badge-red">${x.m.schedule}</span></td><td class="mono">${x.b.billNo}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">No Schedule H sales</td></tr>'}
+    </tbody></table></div>`:''}
+  </div>`;
+}
+function docModal(id){
+  const d=id?docById(id):null;
+  openModal(`<div class="modal"><div class="modal-head"><h3>${d?'Edit':'Add'} Doctor</h3><button class="btn btn-sm btn-ghost" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-field"><label class="req">Doctor Name (start with "Dr.")</label><input id="d-n" value="${d?.name||'Dr. '}"/></div>
+      <div class="form-row"><div><label>Specialization</label><select id="d-s">${['General Physician','Cardiologist','Diabetologist','Orthopedic','Gynecologist','Pediatrician','Dermatologist','ENT','Neurologist','Other'].map(x=>`<option ${d?.specialization===x?'selected':''}>${x}</option>`).join('')}</select></div>
+      <div><label>Clinic/Hospital</label><input id="d-c" value="${d?.clinic||''}"/></div></div>
+      <div class="form-row"><div><label>Area</label><input id="d-a" value="${d?.area||''}"/></div><div><label>Phone</label><input id="d-p" value="${d?.phone||''}"/></div></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveDoc('${id||''}')">Save</button></div>
+  </div>`);
+}
+function saveDoc(id){
+  const g=i=>document.getElementById(i).value;
+  const name=g('d-n').trim();if(!name.startsWith('Dr.'))return toast('Name must start with "Dr."','error');
+  const data={name,specialization:g('d-s'),clinic:g('d-c'),area:g('d-a'),phone:g('d-p')};
+  if(id)Object.assign(docById(id),data);else DB.doctors.push({id:uid(),...data,templates:[]});
+  saveDB();closeModal();renderDoctors();toast('Doctor saved','success');
+}
+let _tplMeds=[];
+function tplModal(did){
+  _tplMeds=[];
+  openModal(`<div class="modal"><div class="modal-head"><h3>Create Template</h3><button class="btn btn-sm btn-ghost" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <label class="req">Template Name</label><input id="t-n" placeholder="e.g. Fever Protocol"/>
+      <label class="mt-3">Add Medicines</label>
+      <select id="t-m" onchange="addTplMed(this.value);this.value=''"><option value="">— Pick medicine —</option>${DB.medicines.map(m=>`<option value="${m.id}">${m.name}</option>`).join('')}</select>
+      <div id="t-list" class="mt-3"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveTpl('${did}')">Save Template</button></div>
+  </div>`);
+}
+function addTplMed(id){if(!id||_tplMeds.find(x=>x.medicineId===id))return;_tplMeds.push({medicineId:id,defaultQty:1});renderTplList()}
+function renderTplList(){document.getElementById('t-list').innerHTML=_tplMeds.map((x,i)=>{const m=medById(x.medicineId);return `<div class="flex items-center gap-3 mb-2"><span style="flex:1">${m.name}</span><input type="number" min="1" value="${x.defaultQty}" style="width:70px" onchange="_tplMeds[${i}].defaultQty=parseInt(this.value)||1"/><button class="btn btn-sm btn-ghost" onclick="_tplMeds.splice(${i},1);renderTplList()">🗑️</button></div>`}).join('')}
+function saveTpl(did){
+  const name=document.getElementById('t-n').value.trim();if(!name)return toast('Name required','error');
+  if(!_tplMeds.length)return toast('Add at least one medicine','error');
+  const d=docById(did);d.templates=d.templates||[];d.templates.push({id:uid(),name,medicines:_tplMeds});
+  saveDB();closeModal();renderDoctors();toast('Template saved','success');
+}
+function delTpl(did,tid){confirmModal('Delete template?',()=>{const d=docById(did);d.templates=d.templates.filter(t=>t.id!==tid);saveDB();renderDoctors()})}
+function useTemplate(did,tid){const d=docById(did);const t=d.templates.find(x=>x.id===tid);STATE.billDraft=null;ensureDraft();STATE.billDraft.doctorId=did;STATE.prefilledBill=t.medicines;go('billing')}
+
+/* =========================================================
+   REPORTS
+   ========================================================= */
+let _rFrom=inDays(-30),_rTo=todayISO(),_gstMonth=new Date().toISOString().slice(0,7);
+function renderReports(){
+  document.getElementById('content').innerHTML=`
+    <div class="page-head"><h1>Reports</h1></div>
+    <div class="tabs">
+      ${['sales','profit','expiry','gst','audit'].map(t=>`<div class="tab ${STATE.reportTab===t?'active':''}" onclick="STATE.reportTab='${t}';renderReports()">${ {sales:'Sales',profit:'Profit',expiry:'Expiry',gst:'GST',audit:'Stock Audit'}[t]}</div>`).join('')}
+    </div>
+    <div id="rep-body"></div>`;
+  ({sales:renderSalesReport,profit:renderProfitReport,expiry:renderExpiryReport,gst:renderGSTReport,audit:renderAuditReport}[STATE.reportTab])();
+}
+function dateRangeBar(){
+  return `<div class="card mb-3 flex gap-2 items-center" style="flex-wrap:wrap">
+    ${[['Today',0,0],['Yesterday',-1,-1],['Week',-6,0],['Month',-29,0]].map(([l,f,t])=>`<button class="btn btn-sm btn-ghost" onclick="_rFrom=inDays(${f});_rTo=inDays(${t});renderReports()">${l}</button>`).join('')}
+    From <input type="date" value="${_rFrom}" onchange="_rFrom=this.value;renderReports()" style="width:auto"/>
+    To <input type="date" value="${_rTo}" onchange="_rTo=this.value;renderReports()" style="width:auto"/>
+  </div>`;
+}
+function renderSalesReport(){
+  const bills=billsBetween(_rFrom,_rTo);
+  const total=bills.reduce((s,b)=>s+b.total,0);
+  const avg=bills.length?total/bills.length:0;
+  const byDate={};bills.forEach(b=>{const d=b.date.slice(0,10);if(!byDate[d])byDate[d]={bills:0,items:0,gross:0,disc:0,gst:0,net:0};byDate[d].bills++;byDate[d].items+=b.items.reduce((s,i)=>s+i.qty,0);byDate[d].gross+=b.subtotal;byDate[d].disc+=b.discount;byDate[d].gst+=b.gstAmount;byDate[d].net+=b.total});
+  const dates=Object.keys(byDate).sort();
+  const max=Math.max(...dates.map(d=>byDate[d].net),1);
+  document.getElementById('rep-body').innerHTML=`${dateRangeBar()}
+    <div class="grid grid-3 mb-3">
+      <div class="card"><div class="stat-num">${inr(total)}</div><div class="stat-label">Total Sales</div></div>
+      <div class="card"><div class="stat-num mono">${bills.length}</div><div class="stat-label">Total Bills</div></div>
+      <div class="card"><div class="stat-num">${inr(avg)}</div><div class="stat-label">Avg Bill Value</div></div>
+    </div>
+    <div class="card mb-3"><div class="panel-title mb-3">Daily Sales</div>
+      ${dates.length?dates.map(d=>`<div class="bar-chart-row"><div>${fmtDate(d)}</div><div class="bar-bg"><div class="bar-fill" style="width:${byDate[d].net/max*100}%"></div></div><div class="mono">${inr(byDate[d].net)}</div></div>`).join(''):'<div class="empty">No sales in range</div>'}
+    </div>
+    <div class="card">
+      <div class="flex justify-between mb-3"><div class="panel-title">Daily Breakdown</div><button class="btn btn-ghost btn-sm" onclick="exportPDF('Sales Report',{headers:['Date','Bills','Items','Gross','Discount','GST','Net'],rows:${JSON.stringify(dates.map(d=>[fmtDate(d),byDate[d].bills,byDate[d].items,inr(byDate[d].gross),inr(byDate[d].disc),inr(byDate[d].gst),inr(byDate[d].net)]))}})">Export PDF</button></div>
+      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Bills</th><th>Items</th><th>Gross</th><th>Disc</th><th>GST</th><th>Net</th></tr></thead><tbody>
+      ${dates.length?dates.map(d=>`<tr><td>${fmtDate(d)}</td><td>${byDate[d].bills}</td><td>${byDate[d].items}</td><td class="mono">${inr(byDate[d].gross)}</td><td class="mono">${inr(byDate[d].disc)}</td><td class="mono">${inr(byDate[d].gst)}</td><td class="mono fw-600">${inr(byDate[d].net)}</td></tr>`).join(''):'<tr><td colspan="7" class="empty">No data</td></tr>'}
+      </tbody></table></div>
+    </div>`;
+}
+function renderProfitReport(){
+  const bills=billsBetween(_rFrom,_rTo);
+  let rev=0,cost=0;const medMap={};
+  bills.forEach(b=>b.items.forEach(it=>{const r=it.mrp*it.qty*(1-it.discount/100);const c=it.purchaseRate*it.qty;rev+=r;cost+=c;if(!medMap[it.medicineId])medMap[it.medicineId]={name:it.medicineName,units:0,rev:0,cost:0};medMap[it.medicineId].units+=it.qty;medMap[it.medicineId].rev+=r;medMap[it.medicineId].cost+=c}));
+  const profit=rev-cost;const margin=rev?Math.round(profit/rev*100):0;
+  const list=Object.values(medMap).map(x=>({...x,profit:x.rev-x.cost,m:x.rev?Math.round((x.rev-x.cost)/x.rev*100):0})).sort((a,b)=>b.profit-a.profit);
+  const lowM=DB.medicines.map(m=>{const b=m.batches[0];if(!b)return null;const mg=Math.round((b.mrp-b.purchaseRate)/b.mrp*100);return mg<10?{name:m.name,mg,pr:b.purchaseRate,mrp:b.mrp,sug:Math.round(b.purchaseRate/0.8*100)/100}:null}).filter(Boolean);
+  document.getElementById('rep-body').innerHTML=`${dateRangeBar()}
+    <div class="grid grid-4 mb-3">
+      <div class="card"><div class="stat-num">${inr(rev)}</div><div class="stat-label">Revenue</div></div>
+      <div class="card"><div class="stat-num">${inr(cost)}</div><div class="stat-label">Cost</div></div>
+      <div class="card"><div class="stat-num" style="color:var(--success)">${inr(profit)}</div><div class="stat-label">Gross Profit</div></div>
+      <div class="card"><div class="stat-num mono">${margin}%</div><div class="stat-label">Margin</div></div>
+    </div>
+    <div class="card mb-3"><div class="flex justify-between mb-3"><div class="panel-title">Top Profitable Medicines</div><button class="btn btn-sm btn-ghost" onclick="exportPDF('Profit Report',{headers:['Medicine','Units','Revenue','Cost','Profit','Margin'],rows:${JSON.stringify(list.map(x=>[x.name,x.units,inr(x.rev),inr(x.cost),inr(x.profit),x.m+'%']))}})">Export PDF</button></div>
+      <div class="table-wrap"><table><thead><tr><th>Medicine</th><th>Units</th><th>Revenue</th><th>Cost</th><th>Profit</th><th>Margin</th></tr></thead><tbody>
+      ${list.length?list.map(x=>`<tr><td>${x.name}</td><td>${x.units}</td><td class="mono">${inr(x.rev)}</td><td class="mono">${inr(x.cost)}</td><td class="mono fw-600">${inr(x.profit)}</td><td><span class="badge ${x.m<10?'badge-red':x.m<20?'badge-grey':'badge-green'}">${x.m}%</span></td></tr>`).join(''):'<tr><td colspan="6" class="empty">No data</td></tr>'}
+      </tbody></table></div>
+    </div>
+    ${lowM.length?`<div class="card"><div class="panel-title mb-3">⚠️ Low Margin Alert (below 10%)</div>
+      <div class="table-wrap"><table><thead><tr><th>Medicine</th><th>Margin</th><th>Purchase</th><th>MRP</th><th>Suggested MRP (20%)</th></tr></thead><tbody>
+      ${lowM.map(x=>`<tr><td>${x.name}</td><td><span class="badge badge-red">${x.mg}%</span></td><td class="mono">${inr(x.pr)}</td><td class="mono">${inr(x.mrp)}</td><td class="mono fw-600">${inr(x.sug)}</td></tr>`).join('')}
+      </tbody></table></div></div>`:''}`;
+}
+function renderExpiryReport(){
+  const r30=[],expired=[];const month=new Date();month.setDate(1);const monthIso=todayISO(month);
+  DB.medicines.forEach(m=>m.batches.forEach(b=>{const d=daysToExpiry(b.expiry);if(b.qty>0&&d>=0&&d<=30)r30.push({m,b});if(d<0)expired.push({m,b})}));
+  const v=arr=>arr.reduce((s,x)=>s+x.b.qty*x.b.purchaseRate,0);
+  document.getElementById('rep-body').innerHTML=`
+    <div class="grid grid-3 mb-3">
+      <div class="card"><div class="stat-num mono">${r30.length}</div><div class="stat-label">Expiring in 30 days</div><div class="stat-sub mono">${inr(v(r30))}</div></div>
+      <div class="card"><div class="stat-num mono">${expired.length}</div><div class="stat-label">Expired</div><div class="stat-sub mono">${inr(v(expired))}</div></div>
+      <div class="card"><div class="stat-num mono">0</div><div class="stat-label">Returned this month</div></div>
+    </div>
+    <div class="card"><div class="flex justify-between mb-3"><div class="panel-title">Expiry Loss</div><button class="btn btn-ghost btn-sm" onclick="exportPDF('Expiry Loss',{headers:['Medicine','Batch','Expiry','Qty','Loss','Supplier'],rows:${JSON.stringify(expired.map(x=>[x.m.name,x.b.batchNo,fmtExpiry(x.b.expiry),x.b.qty,inr(x.b.qty*x.b.purchaseRate),supById(x.b.supplierId)?.name||'—']))}})">Export PDF</button></div>
+      <div class="table-wrap"><table><thead><tr><th>Medicine</th><th>Batch</th><th>Expiry</th><th>Qty</th><th>Loss</th><th>Supplier</th></tr></thead><tbody>
+      ${expired.length?expired.map(x=>`<tr><td>${x.m.name}</td><td class="mono">${x.b.batchNo}</td><td>${fmtExpiry(x.b.expiry)}</td><td>${x.b.qty}</td><td class="mono">${inr(x.b.qty*x.b.purchaseRate)}</td><td>${supById(x.b.supplierId)?.name||'—'}</td></tr>`).join(''):'<tr><td colspan="6" class="empty">No expired stock</td></tr>'}
+      </tbody></table></div></div>`;
+}
+function renderGSTReport(){
+  const month=_gstMonth;
+  const bills=DB.bills.filter(b=>b.date.slice(0,7)===month);
+  const bySlab={0:{tax:0,gst:0},5:{tax:0,gst:0},12:{tax:0,gst:0},18:{tax:0,gst:0}};
+  const byHSN={};
+  bills.forEach(b=>b.items.forEach(it=>{const m=medById(it.medicineId);const slab=it.gst||0;const taxable=it.mrp*it.qty*(1-it.discount/100);const gst=taxable*slab/100;if(bySlab[slab]){bySlab[slab].tax+=taxable;bySlab[slab].gst+=gst}const hsn=m?.hsn||'—';if(!byHSN[hsn])byHSN[hsn]={hsn,desc:m?.name||'',qty:0,tax:0,rate:slab,gst:0};byHSN[hsn].qty+=it.qty;byHSN[hsn].tax+=taxable;byHSN[hsn].gst+=gst}));
+  const totalTax=Object.values(bySlab).reduce((s,x)=>s+x.tax,0);
+  const totalGST=Object.values(bySlab).reduce((s,x)=>s+x.gst,0);
+  document.getElementById('rep-body').innerHTML=`
+    <div class="card mb-3 flex items-center gap-3"><label style="margin:0">Month</label><input type="month" value="${month}" onchange="_gstMonth=this.value;renderReports()" style="width:auto"/></div>
+    <div class="grid grid-4 mb-3">
+      <div class="card"><div class="stat-num">${inr(totalTax)}</div><div class="stat-label">Taxable Sales</div></div>
+      <div class="card"><div class="stat-num">${inr(totalGST)}</div><div class="stat-label">GST Collected</div></div>
+      <div class="card"><div class="stat-num">${inr(0)}</div><div class="stat-label">ITC (Purchases)</div></div>
+      <div class="card"><div class="stat-num" style="color:var(--success)">${inr(totalGST)}</div><div class="stat-label">Net Payable</div></div>
+    </div>
+    <div class="card mb-3"><div class="panel-title mb-3">GST by Slab</div>
+      <div class="table-wrap"><table><thead><tr><th>Rate</th><th>Taxable</th><th>GST</th></tr></thead><tbody>
+      ${[0,5,12,18].map(r=>`<tr><td>${r}%</td><td class="mono">${inr(bySlab[r].tax)}</td><td class="mono">${inr(bySlab[r].gst)}</td></tr>`).join('')}
+      </tbody></table></div></div>
+    <div class="card">
+      <div class="flex justify-between mb-3"><div class="panel-title">GSTR-1 Ready</div><div class="flex gap-2"><button class="btn btn-ghost btn-sm" onclick="exportGSTCSV()">Export CSV</button><button class="btn btn-ghost btn-sm" onclick="exportPDF('GST Report',{headers:['HSN','Description','Qty','Taxable','Rate','GST'],rows:${JSON.stringify(Object.values(byHSN).map(x=>[x.hsn,x.desc,x.qty,inr(x.tax),x.rate+'%',inr(x.gst)]))}})">Export PDF</button></div></div>
+      <div class="table-wrap"><table><thead><tr><th>HSN</th><th>Description</th><th>Qty</th><th>Taxable</th><th>Rate</th><th>GST</th></tr></thead><tbody>
+      ${Object.values(byHSN).length?Object.values(byHSN).map(x=>`<tr><td class="mono">${x.hsn}</td><td>${x.desc}</td><td>${x.qty}</td><td class="mono">${inr(x.tax)}</td><td>${x.rate}%</td><td class="mono">${inr(x.gst)}</td></tr>`).join(''):'<tr><td colspan="6" class="empty">No data</td></tr>'}
+      </tbody></table></div>
+      <div class="text-xs text-muted mt-2">This data is GSTR-1 compatible.</div>
+    </div>`;
+}
+function exportGSTCSV(){
+  const month=_gstMonth;
+  const bills=DB.bills.filter(b=>b.date.slice(0,7)===month);
+  const rows=[['HSN','Description','Qty','Taxable','Rate','GST']];
+  const byHSN={};
+  bills.forEach(b=>b.items.forEach(it=>{const m=medById(it.medicineId);const taxable=it.mrp*it.qty*(1-it.discount/100);const gst=taxable*(it.gst||0)/100;const hsn=m?.hsn||'—';if(!byHSN[hsn])byHSN[hsn]={hsn,desc:m?.name||'',qty:0,tax:0,rate:it.gst,gst:0};byHSN[hsn].qty+=it.qty;byHSN[hsn].tax+=taxable;byHSN[hsn].gst+=gst}));
+  Object.values(byHSN).forEach(x=>rows.push([x.hsn,x.desc,x.qty,x.tax.toFixed(2),x.rate+'%',x.gst.toFixed(2)]));
+  downloadCSV('GSTR1-'+month+'.csv',rows);
+}
+function renderAuditReport(){
+  document.getElementById('rep-body').innerHTML=`<div class="card">
+    <div class="panel-title mb-3">Stock Audit</div>
+    <div class="table-wrap"><table><thead><tr><th>Medicine</th><th>Current Stock</th><th>Last Purchase</th><th>Last Sale</th></tr></thead><tbody>
+    ${DB.medicines.map(m=>{const lastSale=DB.bills.slice().reverse().find(b=>b.items.find(it=>it.medicineId===m.id));return `<tr><td>${m.name}</td><td class="mono fw-600">${totalStock(m)}</td><td>—</td><td>${lastSale?fmtDate(lastSale.date):'—'}</td></tr>`}).join('')}
+    </tbody></table></div>
+    <div class="mt-3 flex gap-2"><button class="btn btn-outline" onclick="toast('Physical count: enter actuals in inventory edit','info')">Run Physical Count</button><button class="btn btn-ghost" onclick="exportPDF('Stock Audit',{headers:['Medicine','Stock'],rows:${JSON.stringify(DB.medicines.map(m=>[m.name,totalStock(m)]))}})">Export PDF</button></div>
+  </div>`;
+}
+
+/* =========================================================
+   SETTINGS
+   ========================================================= */
+function renderSettings(){
+  document.getElementById('content').innerHTML=`
+    <div class="page-head"><h1>Settings</h1></div>
+    <div class="tabs">${['profile','billing','threshold','users'].map(t=>`<div class="tab ${STATE.settingsTab===t?'active':''}" onclick="STATE.settingsTab='${t}';renderSettings()">${ {profile:'Store Profile',billing:'Billing',threshold:'Low Stock',users:'Users'}[t]}</div>`).join('')}</div>
+    <div id="set-body"></div>`;
+  ({profile:renderSetProfile,billing:renderSetBilling,threshold:renderSetThresh,users:renderSetUsers}[STATE.settingsTab])();
+}
+function renderSetProfile(){
+  const s=DB.store;
+  document.getElementById('set-body').innerHTML=`<div class="card" style="max-width:800px">
+    <div class="form-row"><div><label class="req">Store Name</label><input id="sp-n" value="${s.name||''}"/></div><div><label class="req">Owner</label><input id="sp-o" value="${s.owner||''}"/></div></div>
+    <div class="form-field"><label>Address</label><textarea id="sp-a">${s.address||''}</textarea></div>
+    <div class="form-row-3"><div><label>City</label><input id="sp-ci" value="${s.city||''}"/></div><div><label>State</label><input id="sp-st" value="${s.state||''}"/></div><div><label>PIN</label><input id="sp-pin" value="${s.pin||''}"/></div></div>
+    <div class="form-row"><div><label>Phone</label><input id="sp-p" value="${s.phone||''}"/></div><div><label>Email</label><input id="sp-e" value="${s.email||''}"/></div></div>
+    <div class="form-field"><label>GSTIN</label><input id="sp-g" value="${s.gstin||''}" placeholder="15 chars"/></div>
+    <div class="form-row"><div><label>Drug License (Form 20)</label><input id="sp-l20" value="${s.license20||''}"/></div><div><label>Expiry</label><input id="sp-l20e" type="date" value="${s.license20Exp||''}"/></div></div>
+    <div class="form-row"><div><label>Drug License (Form 21)</label><input id="sp-l21" value="${s.license21||''}"/></div><div><label>Expiry</label><input id="sp-l21e" type="date" value="${s.license21Exp||''}"/></div></div>
+    <div class="form-field"><label>Anthropic API Key (for bill scanning)</label><input id="sp-api" type="password" value="${DB.settings.apiKey||''}"/></div>
+    <button class="btn btn-primary btn-lg mt-3" onclick="saveProfile()">Save Profile</button>
+  </div>`;
+}
+function saveProfile(){
+  const g=i=>document.getElementById(i).value;
+  const gstin=g('sp-g').trim();
+  if(gstin&&gstin.length!==15)return toast('GSTIN must be 15 chars','error');
+  Object.assign(DB.store,{name:g('sp-n'),owner:g('sp-o'),address:g('sp-a'),city:g('sp-ci'),state:g('sp-st'),pin:g('sp-pin'),phone:g('sp-p'),email:g('sp-e'),gstin,license20:g('sp-l20'),license20Exp:g('sp-l20e'),license21:g('sp-l21'),license21Exp:g('sp-l21e')});
+  DB.settings.apiKey=g('sp-api');
+  saveDB();computeNotifications();refreshChrome();toast('Profile saved','success');
+}
+function renderSetBilling(){
+  const s=DB.settings;
+  document.getElementById('set-body').innerHTML=`<div class="card" style="max-width:600px">
+    <div class="form-row"><div><label>Bill Prefix</label><input id="bp-p" value="${s.billPrefix}"/></div><div><label>Starting Number</label><input id="bp-c" type="number" value="${s.billCounter}"/></div></div>
+    <div class="form-field"><label>GST Mode</label><div class="toggle-group">${['inclusive','exclusive'].map(g=>`<button class="${s.gstMode===g?'active':''}" onclick="DB.settings.gstMode='${g}';saveDB();renderSetBilling()">${g}</button>`).join('')}</div></div>
+    <div class="form-field"><label>Print Format</label><div class="toggle-group">${['Thermal 58mm','Thermal 80mm','A5','A4'].map(p=>`<button class="${s.printFormat===p?'active':''}" onclick="DB.settings.printFormat='${p}';saveDB();renderSetBilling()">${p}</button>`).join('')}</div></div>
+    <div class="form-row"><div><label>Default Discount %</label><input id="bp-d" type="number" value="${s.defaultDiscount}"/></div></div>
+    <div class="flex gap-3 mt-3"><label class="flex items-center gap-2"><input type="checkbox" style="width:auto" ${s.showMargin?'checked':''} onchange="DB.settings.showMargin=this.checked;saveDB()"/> Show margin on bill</label></div>
+    <div class="flex gap-3"><label class="flex items-center gap-2"><input type="checkbox" style="width:auto" ${s.autoPrint?'checked':''} onchange="DB.settings.autoPrint=this.checked;saveDB()"/> Auto-print on generate</label></div>
+    <div class="flex gap-3"><label class="flex items-center gap-2"><input type="checkbox" style="width:auto" ${s.showDoctor?'checked':''} onchange="DB.settings.showDoctor=this.checked;saveDB()"/> Show doctor on bill</label></div>
+    <button class="btn btn-primary btn-lg mt-3" onclick="DB.settings.billPrefix=document.getElementById('bp-p').value;DB.settings.billCounter=parseInt(document.getElementById('bp-c').value);DB.settings.defaultDiscount=parseInt(document.getElementById('bp-d').value)||0;saveDB();toast('Preferences saved','success')">Save Preferences</button>
+  </div>`;
+}
+function renderSetThresh(){
+  document.getElementById('set-body').innerHTML=`<div class="card" style="max-width:520px">
+    <label>Global low-stock threshold</label>
+    <input id="th-g" type="number" value="${DB.settings.lowStockThreshold}"/>
+    <div class="text-xs text-muted mt-1">Alert when stock falls below this value.</div>
+    <button class="btn btn-primary mt-3" onclick="DB.settings.lowStockThreshold=parseInt(document.getElementById('th-g').value)||10;saveDB();computeNotifications();refreshChrome();toast('Threshold saved','success')">Save</button>
+  </div>`;
+}
+function renderSetUsers(){
+  document.getElementById('set-body').innerHTML=`<div class="card" style="max-width:520px">
+    <h3>Multi-user access</h3>
+    <p class="text-muted mt-2">Multi-user access is coming soon. You'll be able to add staff, assign counters, and set permissions.</p>
+    <label class="mt-3">Email me when ready</label>
+    <input id="nu-e" type="email" placeholder="you@pharmacy.in"/>
+    <button class="btn btn-primary mt-3" onclick="toast('We\\'ll notify you when this is ready','success')">Notify me</button>
+  </div>`;
+}
+
+/* =========================================================
+   MODALS / TOASTS / CHROME
+   ========================================================= */
+function openModal(html){document.getElementById('modal-root').innerHTML='<div class="modal-backdrop" onclick="if(event.target===this)closeModal()">'+html+'</div>'}
+function closeModal(){document.getElementById('modal-root').innerHTML=''}
+function confirmModal(msg,onYes){openModal(`<div class="modal modal-sm"><div class="modal-body"><div>${msg}</div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-danger" id="confYes">Confirm</button></div></div>`);document.getElementById('confYes').onclick=()=>{closeModal();onYes()}}
+function toast(msg,type='success'){const el=document.createElement('div');el.className='toast '+(type==='error'?'error':type==='warning'?'warning':'');el.textContent=msg;document.getElementById('toast-root').appendChild(el);setTimeout(()=>{el.style.opacity=0;setTimeout(()=>el.remove(),300)},3000)}
+
+function refreshChrome(){
+  document.getElementById('t-store').textContent=DB.store.name||'—';
+  document.getElementById('t-avatar').textContent=(DB.store.owner||DB.store.name||'M')[0].toUpperCase();
+  const unread=DB.notifications.filter(n=>!n.read).length;
+  const dot=document.getElementById('notif-count');
+  dot.textContent=unread>9?'9+':unread;dot.classList.toggle('hidden',unread===0);
+  // datetime
+  const now=new Date();
+  document.getElementById('t-datetime').innerHTML=`${now.toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'short',year:'numeric'})}<br><span class="mono">${now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false})}</span>`;
+}
+setInterval(refreshChrome,60000);
+
+function toggleNotif(){
+  closeAll();
+  const dd=document.getElementById('notif-dropdown');
+  dd.innerHTML=`<div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between"><strong>Notifications</strong><a href="#" onclick="DB.notifications.forEach(n=>n.read=true);saveDB();refreshChrome();toggleNotif();return false">Mark all read</a></div>
+    ${DB.notifications.length?DB.notifications.slice(0,20).map(n=>`<div class="notif-item ${n.read?'':'unread'}">
+      <div style="font-size:18px">${ {red:'🔴',orange:'🟠',yellow:'🟡',blue:'🔵',green:'🟢',white:'⚪'}[n.type]||'•'}</div>
+      <div style="flex:1"><div>${n.message}</div><div class="when">${timeAgo(n.timestamp)}</div></div>
+      <button class="btn btn-sm btn-ghost" onclick="DB.notifications=DB.notifications.filter(x=>x.id!=='${n.id}');saveDB();refreshChrome();toggleNotif()">✕</button>
+    </div>`).join(''):'<div class="empty">No notifications</div>'}
+    ${DB.notifications.length?'<div style="padding:10px;text-align:center"><a href="#" onclick="DB.notifications=[];saveDB();refreshChrome();toggleNotif();return false">Clear all</a></div>':''}`;
+  dd.classList.toggle('hidden');
+}
+function toggleProfile(){
+  closeAll();
+  const dd=document.getElementById('profile-dropdown');
+  dd.innerHTML=`<div class="notif-item" style="cursor:pointer" onclick="go('settings');closeAll()">👤 My Profile</div>
+    <div class="notif-item" style="cursor:pointer" onclick="go('settings');closeAll()">⚙️ Settings</div>
+    <div class="notif-item" style="cursor:pointer" onclick="if(confirm('Reset all data?')){localStorage.removeItem(LS_KEY);location.reload()}">🚪 Reset Data</div>`;
+  dd.classList.toggle('hidden');
+}
+function timeAgo(iso){const s=Math.floor((new Date()-new Date(iso))/1000);if(s<60)return 'just now';if(s<3600)return Math.floor(s/60)+'m ago';if(s<86400)return Math.floor(s/3600)+'h ago';return Math.floor(s/86400)+'d ago'}
+
+function downloadCSV(name,rows){const csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');const blob=new Blob([csv],{type:'text/csv'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;a.click();URL.revokeObjectURL(url)}
+function exportPDF(title,data){
+  const w=window.open('','_blank');
+  w.document.write(`<html><head><title>${title}</title><style>body{font-family:Inter,sans-serif;padding:20px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #ccc;padding:6px;text-align:left}h1{font-size:18px}</style></head><body><h1>${title}</h1><div>${DB.store.name||''} · ${fmtDate(todayISO())}</div><table><thead><tr>${data.headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${data.rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table><script>window.print()<\/script></body></html>`);
+  w.document.close();
+}
+
+/* =========================================================
+   WELCOME
+   ========================================================= */
+function welcomeNext(step){
+  if(step===1){
+    const name=document.getElementById('w-store').value.trim();
+    if(!name){toast('Enter store name','error');return}
+    document.getElementById('w-step-1').classList.remove('active');
+    document.getElementById('w-step-2').classList.add('active');
+  }else if(step===2){
+    const name=document.getElementById('w-store').value.trim();
+    const owner=document.getElementById('w-owner').value.trim();
+    const api=document.getElementById('w-api').value.trim();
+    document.getElementById('w-step-2').classList.remove('active');
+    document.getElementById('w-step-3').classList.add('active');
+    setTimeout(()=>{seedDB(name,owner,api);boot();toast('Your pharmacy is ready! Start by scanning a supplier bill or creating a sale.','success')},1500);
+  }
+}
+
+/* =========================================================
+   BOOT
+   ========================================================= */
+function boot(){
+  document.getElementById('welcome').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  refreshChrome();
+  go('dashboard');
+}
+
+window.addEventListener('keydown',e=>{
+  if(e.key==='Escape')closeModal();
+  if(e.key==='b'||e.key==='B'){if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName))return;STATE.billDraft=null;go('billing')}
+});
+
+document.addEventListener('click',e=>{if(!e.target.closest('#notif-dropdown')&&!e.target.closest('#profile-dropdown')&&!e.target.closest('.icon-btn')&&!e.target.closest('.avatar')){closeAll()}});
+
+if(loadDB()){boot()}
+else{document.getElementById('welcome').classList.remove('hidden')}
+</script>
+</body>
+</html>
