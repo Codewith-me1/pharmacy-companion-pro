@@ -1,5 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -10,16 +9,7 @@ export const Route = createFileRoute("/")({
       { property: "og:description", content: "Smart Pharmacy OS for India — billing, stock, expiry and GST in one app." },
     ],
   }),
-  component: Index,
+  beforeLoad: () => {
+    throw redirect({ to: "/app/dashboard" });
+  },
 });
-
-function Index() {
-  useEffect(() => {
-    window.location.replace("/mediOS.html");
-  }, []);
-  return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "system-ui", color: "#1A7A3C" }}>
-      Loading MediOS…
-    </div>
-  );
-}
