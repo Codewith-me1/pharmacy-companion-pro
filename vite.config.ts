@@ -12,4 +12,10 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  // This app uses better-sqlite3 (a native Node module) for its database, which cannot run on
+  // Cloudflare Workers (no filesystem/native addons there). Target a plain Node server instead
+  // of the default Cloudflare preset so `npm run build` + `npm run preview` work locally.
+  nitro: {
+    preset: "node-server",
+  },
 });
