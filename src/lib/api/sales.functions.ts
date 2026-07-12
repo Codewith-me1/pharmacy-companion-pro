@@ -6,7 +6,7 @@ import { sales, saleItems, batches, medicines, customers, doctors, stockMovement
 
 async function nextBillNumber(prefix: string) {
   const db = getDb();
-  const [{ count }] = await db.select({ count: sql<number>`count(*)` }).from(sales);
+  const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(sales);
   return `${prefix}-${String(count + 1).padStart(5, "0")}`;
 }
 
@@ -149,7 +149,9 @@ export const getSale = createServerFn({ method: "GET" })
         gstPercent: saleItems.gstPercent,
         discount: saleItems.discount,
         medicineName: medicines.name,
+        pack: medicines.pack,
         batchNo: batches.batchNo,
+        expiryDate: batches.expiryDate,
       })
       .from(saleItems)
       .innerJoin(medicines, eq(medicines.id, saleItems.medicineId))

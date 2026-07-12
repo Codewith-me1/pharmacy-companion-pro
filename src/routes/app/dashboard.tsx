@@ -12,7 +12,10 @@ import {
 } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { getDashboardStats } from "@/lib/api/dashboard.functions";
+import { getBusinessSettings } from "@/lib/api/business-settings.functions";
 import { StatCard } from "@/components/stat-card";
+import { GlobalSearch } from "@/components/global-search";
+import { AiChatbot } from "@/components/ai-chatbot";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatInr } from "@/lib/format";
@@ -27,6 +30,7 @@ function Dashboard() {
     queryFn: () => getDashboardStats(),
     refetchInterval: 30_000,
   });
+  const { data: business } = useQuery({ queryKey: ["business-settings"], queryFn: () => getBusinessSettings() });
 
   if (isLoading || !data) {
     return <div className="text-sm text-muted-foreground">Loading dashboard…</div>;
@@ -34,9 +38,13 @@ function Dashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-bold">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">Today's snapshot of your pharmacy.</p>
+      {(business?.aiAssistantEnabled ?? true) && <AiChatbot />}
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-xl font-bold">Dashboard</h1>
+          <p className="text-sm text-muted-foreground">Today's snapshot of your pharmacy.</p>
+        </div>
+        <GlobalSearch />
       </div>
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">

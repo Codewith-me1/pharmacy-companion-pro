@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { Camera, ImagePlus, Loader2, ScanLine, Trash2, Video } from "lucide-react";
+import { Camera, ImagePlus, Loader2, Mail, ScanLine, Trash2, Video } from "lucide-react";
 import { extractInvoice, savePurchase } from "@/lib/api/purchases.functions";
 import { fileToBase64 } from "@/lib/file-to-base64";
+import { pdfToImageBlob } from "@/lib/pdf-to-image";
 import { WebcamCapture } from "@/components/webcam-capture";
+import { FetchEmailDialog } from "@/components/fetch-email-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -31,23 +33,43 @@ const FLAG_LABELS: Record<string, string> = {
 
 function NewPurchase() {
   const navigate = useNavigate();
-  const [step, setStep] = useState<"capture" | "extracting" | "review">("capture");
+  const [step, setStep] = useState<"capture" | "converting" | "extracting" | "review">("capture");
   const [showWebcam, setShowWebcam] = useState(false);
+  const [showEmailDialog, setShowEmailDialog] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [sourceLabel, setSourceLabel] = useState<"camera" | "webcam" | "pdf" | "scanner">("camera");
+  const [sourceLabel, setSourceLabel] = useState<"camera" | "webcam" | "pdf" | "scanner" | "email">("camera");
   const [saving, setSaving] = useState(false);
 
-  async function processFile(file: Blob, source: typeof sourceLabel) {
+  async function processBase64(base64: string, mimeType: string, source: typeof sourceLabel) {
     setStep("extracting");
     setSourceLabel(source);
     try {
-      const { base64, mimeType } = await fileToBase64(file);
       const result = await extractInvoice({ data: { imageBase64: base64, mimeType, sourceLabel: source } });
       setDraft(result.draft);
       setStep("review");
       toast.success(`Extracted ${result.draft.items.length} line item(s) from the invoice.`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to extract invoice.");
+      setStep("capture");
+    }
+  }
+
+  async function processFile(file: Blob, source: typeof sourceLabel) {
+    const { base64, mimeType } = await fileToBase64(file);
+    await processBase64(base64, mimeType, source);
+  }
+
+  async function processMaybePdf(file: File, source: typeof sourceLabel) {
+    if (file.type !== "application/pdf") {
+      await processFile(file, source);
+      return;
+    }
+    setStep("converting");
+    try {
+      const imageBlob = await pdfToImageBlob(file);
+      await processFile(imageBlob, source);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to read this PDF. Try exporting it as an image instead.");
       setStep("capture");
     }
   }
@@ -73,6 +95,7 @@ function NewPurchase() {
         data: {
           supplier: draft.supplier,
           invoiceNumber: draft.invoiceNumber,
+          serialNumber: draft.serialNumber,
           invoiceDate: draft.invoiceDate,
           billNumber: draft.billNumber,
           invoiceTotal: draft.invoiceTotal,
@@ -108,7 +131,7 @@ function NewPurchase() {
             <p className="text-center text-sm text-muted-foreground">
               Choose how you'd like to capture the invoice
             </p>
-            <div className="grid w-full max-w-2xl grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="grid w-full max-w-3xl grid-cols-2 gap-3 sm:grid-cols-5">
               <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-border p-4 text-sm hover:bg-accent">
                 <Camera className="h-5 w-5" />
                 Mobile Camera
@@ -132,17 +155,9 @@ function NewPurchase() {
                 PDF Upload
                 <input
                   type="file"
-                  accept="image/*,.pdf"
+                  accept="image/*,.pdf,application/pdf"
                   className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    if (file.type === "application/pdf") {
-                      toast.error("PDF pages must be exported as an image (JPG/PNG) for AI extraction.");
-                      return;
-                    }
-                    processFile(file, "pdf");
-                  }}
+                  onChange={(e) => e.target.files?.[0] && processMaybePdf(e.target.files[0], "pdf")}
                 />
               </label>
               <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-border p-4 text-sm hover:bg-accent">
@@ -150,12 +165,28 @@ function NewPurchase() {
                 Scanner Upload
                 <input
                   type="file"
-                  accept="image/*"
+                  accept="image/*,.pdf,application/pdf"
                   className="hidden"
-                  onChange={(e) => e.target.files?.[0] && processFile(e.target.files[0], "scanner")}
+                  onChange={(e) => e.target.files?.[0] && processMaybePdf(e.target.files[0], "scanner")}
                 />
               </label>
+              <button
+                className="flex flex-col items-center gap-2 rounded-lg border border-border p-4 text-sm hover:bg-accent"
+                onClick={() => setShowEmailDialog(true)}
+              >
+                <Mail className="h-5 w-5" />
+                Fetch from Email
+              </button>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {step === "converting" && (
+        <Card>
+          <CardContent className="flex flex-col items-center gap-4 p-16">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">Converting PDF to an image…</p>
           </CardContent>
         </Card>
       )}
@@ -188,8 +219,17 @@ function NewPurchase() {
                   onChange={(e) => setDraft({ ...draft, supplier: { ...draft.supplier, gstNumber: e.target.value } })}
                 />
               </Field>
+              <Field label="Supplier D.L. No">
+                <Input
+                  value={draft.supplier.dlNo}
+                  onChange={(e) => setDraft({ ...draft, supplier: { ...draft.supplier, dlNo: e.target.value } })}
+                />
+              </Field>
               <Field label="Invoice Number">
                 <Input value={draft.invoiceNumber} onChange={(e) => setDraft({ ...draft, invoiceNumber: e.target.value })} />
+              </Field>
+              <Field label="Serial Number">
+                <Input value={draft.serialNumber} onChange={(e) => setDraft({ ...draft, serialNumber: e.target.value })} />
               </Field>
               <Field label="Invoice Date">
                 <Input
@@ -236,13 +276,17 @@ function NewPurchase() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Medicine</TableHead>
+                    <TableHead>Pack</TableHead>
                     <TableHead>Batch</TableHead>
                     <TableHead>Expiry</TableHead>
+                    <TableHead>HSN</TableHead>
                     <TableHead>Qty</TableHead>
                     <TableHead>Free</TableHead>
-                    <TableHead>Purchase ₹</TableHead>
+                    <TableHead>Rate ₹</TableHead>
                     <TableHead>MRP ₹</TableHead>
                     <TableHead>GST %</TableHead>
+                    <TableHead>GST Value ₹</TableHead>
+                    <TableHead>Amount ₹</TableHead>
                     <TableHead>Flags</TableHead>
                     <TableHead />
                   </TableRow>
@@ -261,6 +305,9 @@ function NewPurchase() {
                         {item.medicineId && <Badge variant="secondary" className="mt-1">existing medicine</Badge>}
                       </TableCell>
                       <TableCell>
+                        <Input className="w-20" value={item.pack ?? ""} onChange={(e) => updateItem(i, { pack: e.target.value })} />
+                      </TableCell>
+                      <TableCell>
                         <Input className="w-24" value={item.batchNo ?? ""} onChange={(e) => updateItem(i, { batchNo: e.target.value })} />
                       </TableCell>
                       <TableCell>
@@ -270,6 +317,9 @@ function NewPurchase() {
                           value={item.expiryDate ?? ""}
                           onChange={(e) => updateItem(i, { expiryDate: e.target.value })}
                         />
+                      </TableCell>
+                      <TableCell>
+                        <Input className="w-20" value={item.hsnCode ?? ""} onChange={(e) => updateItem(i, { hsnCode: e.target.value })} />
                       </TableCell>
                       <TableCell>
                         <Input
@@ -310,6 +360,12 @@ function NewPurchase() {
                           value={item.gstPercent}
                           onChange={(e) => updateItem(i, { gstPercent: Number(e.target.value) })}
                         />
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right font-mono text-xs text-muted-foreground">
+                        {((item.purchasePrice * item.quantity * item.gstPercent) / 100).toFixed(2)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right font-mono text-xs">
+                        {(item.purchasePrice * item.quantity).toFixed(2)}
                       </TableCell>
                       <TableCell className="max-w-40">
                         <div className="flex flex-wrap gap-1">
@@ -358,6 +414,15 @@ function NewPurchase() {
           }}
         />
       )}
+
+      <FetchEmailDialog
+        open={showEmailDialog}
+        onOpenChange={setShowEmailDialog}
+        onSelectImage={(base64, mimeType) => {
+          setShowEmailDialog(false);
+          processBase64(base64, mimeType, "email");
+        }}
+      />
     </div>
   );
 }

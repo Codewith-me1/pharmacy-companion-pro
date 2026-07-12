@@ -23,7 +23,7 @@ export const salesReport = createServerFn({ method: "GET" })
       })
       .from(sales)
       .where(
-        sql`date(${sales.createdAt}) >= date(${data?.from ?? "1970-01-01"}) and date(${sales.createdAt}) <= date(${data?.to ?? "2999-01-01"})`,
+        sql`${sales.createdAt}::date >= ${data?.from ?? "1970-01-01"}::date and ${sales.createdAt}::date <= ${data?.to ?? "2999-01-01"}::date`,
       )
       .orderBy(sql`${sales.createdAt} desc`);
   });
@@ -44,7 +44,7 @@ export const purchaseReport = createServerFn({ method: "GET" })
       .from(purchases)
       .leftJoin(suppliers, sql`${suppliers.id} = ${purchases.supplierId}`)
       .where(
-        sql`date(${purchases.createdAt}) >= date(${data?.from ?? "1970-01-01"}) and date(${purchases.createdAt}) <= date(${data?.to ?? "2999-01-01"})`,
+        sql`${purchases.createdAt}::date >= ${data?.from ?? "1970-01-01"}::date and ${purchases.createdAt}::date <= ${data?.to ?? "2999-01-01"}::date`,
       )
       .orderBy(sql`${purchases.createdAt} desc`);
   });
@@ -53,21 +53,21 @@ export const gstReport = createServerFn({ method: "GET" }).handler(async () => {
   const db = getDb();
   const outputGst = await db
     .select({
-      month: sql<string>`strftime('%Y-%m', ${sales.createdAt})`,
+      month: sql<string>`to_char(${sales.createdAt}::date, 'YYYY-MM')`,
       gstCollected: sql<number>`sum(${sales.gstAmount})`,
     })
     .from(sales)
-    .groupBy(sql`strftime('%Y-%m', ${sales.createdAt})`)
-    .orderBy(sql`strftime('%Y-%m', ${sales.createdAt}) desc`);
+    .groupBy(sql`to_char(${sales.createdAt}::date, 'YYYY-MM')`)
+    .orderBy(sql`to_char(${sales.createdAt}::date, 'YYYY-MM') desc`);
 
   const inputGst = await db
     .select({
-      month: sql<string>`strftime('%Y-%m', ${purchases.createdAt})`,
+      month: sql<string>`to_char(${purchases.createdAt}::date, 'YYYY-MM')`,
       gstPaid: sql<number>`sum(${purchases.taxAmount})`,
     })
     .from(purchases)
-    .groupBy(sql`strftime('%Y-%m', ${purchases.createdAt})`)
-    .orderBy(sql`strftime('%Y-%m', ${purchases.createdAt}) desc`);
+    .groupBy(sql`to_char(${purchases.createdAt}::date, 'YYYY-MM')`)
+    .orderBy(sql`to_char(${purchases.createdAt}::date, 'YYYY-MM') desc`);
 
   return { outputGst, inputGst };
 });
@@ -76,7 +76,7 @@ export const profitLossReport = createServerFn({ method: "GET" }).handler(async 
   const db = getDb();
   return db
     .select({
-      month: sql<string>`strftime('%Y-%m', ${sales.createdAt})`,
+      month: sql<string>`to_char(${sales.createdAt}::date, 'YYYY-MM')`,
       revenue: sql<number>`sum(${saleItems.salePrice} * ${saleItems.quantity})`,
       cost: sql<number>`sum(${batches.purchasePrice} * ${saleItems.quantity})`,
       profit: sql<number>`sum((${saleItems.salePrice} - ${batches.purchasePrice}) * ${saleItems.quantity})`,
@@ -84,18 +84,22 @@ export const profitLossReport = createServerFn({ method: "GET" }).handler(async 
     .from(saleItems)
     .innerJoin(sales, sql`${sales.id} = ${saleItems.saleId}`)
     .innerJoin(batches, sql`${batches.id} = ${saleItems.batchId}`)
-    .groupBy(sql`strftime('%Y-%m', ${sales.createdAt})`)
-    .orderBy(sql`strftime('%Y-%m', ${sales.createdAt}) desc`);
+    .groupBy(sql`to_char(${sales.createdAt}::date, 'YYYY-MM')`)
+    .orderBy(sql`to_char(${sales.createdAt}::date, 'YYYY-MM') desc`);
 });
 
 export const inventoryMovementReport = createServerFn({ method: "GET" }).handler(async () => {
   const db = getDb();
   const fastMoving = await db
-    .select({ medicineId: saleItems.medicineId, name: medicines.name, totalQty: sql<number>`sum(${saleItems.quantity})` })
+    .select({
+      medicineId: saleItems.medicineId,
+      name: medicines.name,
+      totalQty: sql<number>`sum(${saleItems.quantity})::int`,
+    })
     .from(saleItems)
     .innerJoin(medicines, sql`${medicines.id} = ${saleItems.medicineId}`)
-    .where(sql`${saleItems.saleId} in (select id from sales where sales.created_at >= date('now', '-60 days'))`)
-    .groupBy(saleItems.medicineId)
+    .where(sql`${saleItems.saleId} in (select id from sales where sales.created_at::date >= CURRENT_DATE - 60)`)
+    .groupBy(saleItems.medicineId, medicines.name)
     .orderBy(sql`sum(${saleItems.quantity}) desc`)
     .limit(10);
 
@@ -104,7 +108,7 @@ export const inventoryMovementReport = createServerFn({ method: "GET" }).handler
     .from(medicines)
     .leftJoin(batches, sql`${batches.medicineId} = ${medicines.id}`)
     .where(
-      sql`${medicines.id} not in (select medicine_id from sale_items where sale_id in (select id from sales where sales.created_at >= date('now', '-90 days')))`,
+      sql`${medicines.id} not in (select medicine_id from sale_items where sale_id in (select id from sales where sales.created_at::date >= CURRENT_DATE - 90))`,
     )
     .groupBy(medicines.id)
     .having(sql`coalesce(sum(${batches.quantity}), 0) > 0`);
@@ -118,7 +122,7 @@ export const companyWiseReport = createServerFn({ method: "GET" }).handler(async
     .select({
       company: medicines.company,
       totalStockValue: sql<number>`coalesce(sum(${batches.quantity} * ${batches.purchasePrice}), 0)`,
-      medicineCount: sql<number>`count(distinct ${medicines.id})`,
+      medicineCount: sql<number>`count(distinct ${medicines.id})::int`,
     })
     .from(medicines)
     .leftJoin(batches, sql`${batches.medicineId} = ${medicines.id}`)
@@ -131,7 +135,7 @@ export const categoryWiseReport = createServerFn({ method: "GET" }).handler(asyn
     .select({
       category: medicines.category,
       totalStockValue: sql<number>`coalesce(sum(${batches.quantity} * ${batches.purchasePrice}), 0)`,
-      medicineCount: sql<number>`count(distinct ${medicines.id})`,
+      medicineCount: sql<number>`count(distinct ${medicines.id})::int`,
     })
     .from(medicines)
     .leftJoin(batches, sql`${batches.medicineId} = ${medicines.id}`)

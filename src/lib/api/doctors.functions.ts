@@ -21,6 +21,7 @@ export const getDoctorWithMedicines = createServerFn({ method: "GET" })
         defaultQty: doctorMedicines.defaultQty,
         rank: doctorMedicines.rank,
         medicineName: medicines.name,
+        pack: medicines.pack,
         mrp: medicines.mrp,
       })
       .from(doctorMedicines)

@@ -12,4 +12,20 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  // This app connects to PostgreSQL over a TCP socket (via `pg`), which cannot run on
+  // Cloudflare Workers. Target a plain Node server instead of the default Cloudflare
+  // preset so `npm run build` + `npm run preview` work locally.
+  nitro: {
+    preset: "node-server",
+  },
+  // Server-only native/Node packages — keep Vite's dependency scanner from ever pre-bundling
+  // these for the client, regardless of which module graph path discovers them first.
+  vite: {
+    optimizeDeps: {
+      exclude: ["pg", "imapflow", "mailparser"],
+    },
+    ssr: {
+      external: ["pg", "imapflow", "mailparser"],
+    },
+  },
 });

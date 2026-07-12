@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Printer } from "lucide-react";
 import { listSales, getSale } from "@/lib/api/sales.functions";
+import { getBusinessSettings } from "@/lib/api/business-settings.functions";
 import { printBill } from "@/lib/print-bill";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +30,7 @@ function BillingPage() {
     queryFn: () => getSale({ data: { id: selectedId! } }),
     enabled: selectedId != null,
   });
+  const { data: business } = useQuery({ queryKey: ["business-settings"], queryFn: () => getBusinessSettings() });
 
   return (
     <div className="flex flex-col gap-4">
@@ -122,19 +124,23 @@ function BillingPage() {
                     billNumber: detail.sale.billNumber,
                     billType: detail.sale.billType,
                     createdAt: formatDate(detail.sale.createdAt),
+                    firmName: business?.firmName,
+                    dlNo: business?.dlNo,
+                    gstNumber: business?.gstNumber,
+                    phone: business?.mobile,
+                    address: business?.address,
                     customerName: detail.sale.customerName,
                     doctorName: detail.sale.doctorName,
-                    paymentMode: detail.sale.paymentMode,
                     items: detail.items.map((i) => ({
                       medicineName: i.medicineName,
+                      pack: i.pack,
                       batchNo: i.batchNo,
+                      expiryDate: i.expiryDate,
                       quantity: i.quantity,
-                      salePrice: i.salePrice,
+                      rate: i.salePrice,
+                      mrp: i.mrp,
                     })),
-                    subtotal: detail.sale.subtotal,
-                    gstAmount: detail.sale.gstAmount,
                     discount: detail.sale.discount,
-                    total: detail.sale.total,
                   })
                 }
               >

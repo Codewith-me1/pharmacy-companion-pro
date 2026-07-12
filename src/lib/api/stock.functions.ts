@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { eq, desc, asc, sql } from "drizzle-orm";
 import { getDb } from "../db/client.server";
-import { batches, medicines, stockMovements } from "../db/schema";
+import { batches, medicines, suppliers, stockMovements } from "../db/schema";
 
 const movementType = z.enum(["in", "out", "adjustment", "damage", "lost", "expired", "return", "transfer"]);
 
@@ -10,7 +10,28 @@ export const listBatchesForMedicine = createServerFn({ method: "GET" })
   .inputValidator(z.object({ medicineId: z.number() }))
   .handler(async ({ data }) => {
     const db = getDb();
-    return db.select().from(batches).where(eq(batches.medicineId, data.medicineId)).orderBy(asc(batches.expiryDate));
+    return db
+      .select({
+        id: batches.id,
+        medicineId: batches.medicineId,
+        batchNo: batches.batchNo,
+        expiryDate: batches.expiryDate,
+        manufactureDate: batches.manufactureDate,
+        quantity: batches.quantity,
+        reservedQuantity: batches.reservedQuantity,
+        purchasePrice: batches.purchasePrice,
+        mrp: batches.mrp,
+        ptr: batches.ptr,
+        pts: batches.pts,
+        supplierId: batches.supplierId,
+        supplierName: suppliers.name,
+        purchaseId: batches.purchaseId,
+        createdAt: batches.createdAt,
+      })
+      .from(batches)
+      .leftJoin(suppliers, eq(suppliers.id, batches.supplierId))
+      .where(eq(batches.medicineId, data.medicineId))
+      .orderBy(asc(batches.expiryDate));
   });
 
 export const recordStockMovement = createServerFn({ method: "POST" })
@@ -70,8 +91,8 @@ export const stockSummary = createServerFn({ method: "GET" }).handler(async () =
   const [row] = await db
     .select({
       totalStockValue: sql<number>`coalesce(sum(${batches.quantity} * ${batches.purchasePrice}), 0)`,
-      lowStockCount: sql<number>`(select count(*) from (select ${batches.medicineId} as mid, sum(${batches.quantity}) as qty from ${batches} group by ${batches.medicineId} having qty <= 10))`,
-      outOfStockCount: sql<number>`(select count(*) from (select ${batches.medicineId} as mid, sum(${batches.quantity}) as qty from ${batches} group by ${batches.medicineId} having qty = 0))`,
+      lowStockCount: sql<number>`(select count(*)::int from (select ${batches.medicineId} as mid, sum(${batches.quantity}) as qty from ${batches} group by ${batches.medicineId} having sum(${batches.quantity}) <= 10) t)`,
+      outOfStockCount: sql<number>`(select count(*)::int from (select ${batches.medicineId} as mid, sum(${batches.quantity}) as qty from ${batches} group by ${batches.medicineId} having sum(${batches.quantity}) = 0) t)`,
     })
     .from(batches);
   return row;

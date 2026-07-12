@@ -20,6 +20,6 @@ export function getServerConfig() {
   return {
     nodeEnv: process.env.NODE_ENV,
     openaiApiKey: process.env.OPENAI_API_KEY,
-    databasePath: process.env.DATABASE_PATH,
+    databaseUrl: process.env.DATABASE_URL,
   };
 }
