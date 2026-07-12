@@ -18,4 +18,14 @@ export default defineConfig({
   nitro: {
     preset: "node-server",
   },
+  // Server-only native/Node packages — keep Vite's dependency scanner from ever pre-bundling
+  // these for the client, regardless of which module graph path discovers them first.
+  vite: {
+    optimizeDeps: {
+      exclude: ["better-sqlite3", "imapflow", "mailparser"],
+    },
+    ssr: {
+      external: ["better-sqlite3", "imapflow", "mailparser"],
+    },
+  },
 });

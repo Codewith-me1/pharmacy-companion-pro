@@ -7,6 +7,7 @@ import { getServerConfig } from "../config.server";
 
 const extractedItemSchema = z.object({
   medicineName: z.string(),
+  pack: z.string().nullable().optional(),
   batchNumber: z.string().nullable().optional(),
   expiryDate: z.string().nullable().optional(), // YYYY-MM
   manufactureDate: z.string().nullable().optional(),
@@ -30,8 +31,10 @@ const extractedItemSchema = z.object({
 const extractedInvoiceSchema = z.object({
   supplierName: z.string().nullable().optional(),
   supplierGstNumber: z.string().nullable().optional(),
+  supplierDlNo: z.string().nullable().optional(),
   supplierAddress: z.string().nullable().optional(),
   invoiceNumber: z.string().nullable().optional(),
+  serialNumber: z.string().nullable().optional(),
   invoiceDate: z.string().nullable().optional(),
   billNumber: z.string().nullable().optional(),
   invoiceTotal: z.number().nullable().optional(),
@@ -45,8 +48,10 @@ const STANDARD_GST_SLABS = [0, 5, 12, 18, 28];
 const JSON_SHAPE_HINT = JSON.stringify({
   supplierName: "string|null",
   supplierGstNumber: "string|null",
+  supplierDlNo: "string|null (the SUPPLIER's own Drug License number printed on the invoice, not yours)",
   supplierAddress: "string|null",
   invoiceNumber: "string|null",
+  serialNumber: "string|null (the invoice's own serial/reference number, if printed separately from the invoice number)",
   invoiceDate: "string|null",
   billNumber: "string|null",
   invoiceTotal: "number|null",
@@ -55,6 +60,7 @@ const JSON_SHAPE_HINT = JSON.stringify({
   items: [
     {
       medicineName: "string",
+      pack: "string|null (pack size as printed, e.g. '10s', '200ML', '20G', '1X10')",
       batchNumber: "string|null",
       expiryDate: "string|null",
       manufactureDate: "string|null",
@@ -166,6 +172,7 @@ async function buildDraftFromExtraction(extracted: z.infer<typeof extractedInvoi
       return {
         medicineId: existingMedicine?.id ?? null,
         medicineNameRaw: item.medicineName,
+        pack: item.pack ?? existingMedicine?.pack ?? null,
         batchNo: item.batchNumber ?? null,
         expiryDate,
         manufactureDate: normalizeExpiry(item.manufactureDate),
@@ -194,9 +201,11 @@ async function buildDraftFromExtraction(extracted: z.infer<typeof extractedInvoi
       id: matchedSupplier?.id ?? null,
       name: extracted.supplierName ?? matchedSupplier?.name ?? "",
       gstNumber: extracted.supplierGstNumber ?? matchedSupplier?.gstNumber ?? "",
+      dlNo: extracted.supplierDlNo ?? matchedSupplier?.dlNo ?? "",
       address: extracted.supplierAddress ?? matchedSupplier?.address ?? "",
     },
     invoiceNumber: extracted.invoiceNumber ?? "",
+    serialNumber: extracted.serialNumber ?? "",
     invoiceDate: extracted.invoiceDate ?? "",
     billNumber: extracted.billNumber ?? "",
     invoiceTotal: extracted.invoiceTotal ?? 0,
@@ -213,7 +222,7 @@ export const extractInvoice = createServerFn({ method: "POST" })
     z.object({
       imageBase64: z.string(),
       mimeType: z.string().default("image/jpeg"),
-      sourceLabel: z.enum(["camera", "webcam", "pdf", "scanner"]).default("camera"),
+      sourceLabel: z.enum(["camera", "webcam", "pdf", "scanner", "email"]).default("camera"),
     }),
   )
   .handler(async ({ data }) => {
@@ -228,24 +237,35 @@ export const extractInvoice = createServerFn({ method: "POST" })
     const client = new OpenAI({ apiKey: config.openaiApiKey });
 
     const response = await client.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: process.env.OPENAI_VISION_MODEL || "gpt-4o",
+      temperature: 0,
+      max_tokens: 8000,
       response_format: { type: "json_object" },
       messages: [
         {
           role: "system",
           content: [
-            "You are an expert at reading Indian pharmaceutical purchase invoices.",
+            "You are an expert pharmacist's assistant specializing in reading Indian pharmaceutical purchase invoices, including ones that are blurry, skewed, low-light, partially cropped, or photographed at an angle.",
+            "Work like a meticulous human transcriber: zoom into each row mentally, use surrounding context (column headers, repeated patterns, typical Indian pharma invoice conventions) to resolve ambiguous characters (e.g. 0 vs O, 1 vs I, 5 vs S), and never skip a row just because part of it is hard to read.",
+            "Extract EVERY line item in the goods table, top to bottom, even if there are 20+ rows — do not truncate or summarize.",
             "Extract structured data as JSON matching this shape exactly:",
             JSON_SHAPE_HINT,
-            "confidence is your 0-1 certainty for that line item OCR accuracy overall.",
-            "If a field is unreadable, use null rather than guessing wildly. Dates may be MM/YYYY for expiry.",
+            "confidence is your 0-1 certainty for that line item's OCR accuracy overall (lower it for blurry/ambiguous rows instead of dropping them).",
+            "Only use null when a field is truly absent from the invoice or fully illegible — for partially legible values, give your best reading at a lower confidence rather than nulling it out.",
+            "Expiry/manufacture dates are usually MM/YYYY. GST is usually split as CGST+SGST (intra-state) or IGST (inter-state) — infer the total gstPercent from whichever is present.",
           ].join(" "),
         },
         {
           role: "user",
           content: [
-            { type: "text", text: "Extract all fields from this purchase invoice." },
-            { type: "image_url", image_url: { url: `data:${data.mimeType};base64,${data.imageBase64}` } },
+            {
+              type: "text",
+              text: "Extract every field and every line item from this purchase invoice as accurately as possible, including if the photo quality is imperfect.",
+            },
+            {
+              type: "image_url",
+              image_url: { url: `data:${data.mimeType};base64,${data.imageBase64}`, detail: "high" },
+            },
           ],
         },
       ],
@@ -260,6 +280,7 @@ export const extractInvoice = createServerFn({ method: "POST" })
 const draftItemInput = z.object({
   medicineId: z.number().nullable(),
   medicineNameRaw: z.string(),
+  pack: z.string().nullable().optional(),
   batchNo: z.string().nullable(),
   expiryDate: z.string().nullable(),
   manufactureDate: z.string().nullable(),
@@ -284,8 +305,15 @@ const draftItemInput = z.object({
 export const savePurchase = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({
-      supplier: z.object({ id: z.number().nullable(), name: z.string(), gstNumber: z.string(), address: z.string() }),
+      supplier: z.object({
+        id: z.number().nullable(),
+        name: z.string(),
+        gstNumber: z.string(),
+        dlNo: z.string().optional(),
+        address: z.string(),
+      }),
       invoiceNumber: z.string().optional(),
+      serialNumber: z.string().optional(),
       invoiceDate: z.string().optional(),
       billNumber: z.string().optional(),
       invoiceTotal: z.number().optional(),
@@ -303,9 +331,19 @@ export const savePurchase = createServerFn({ method: "POST" })
     if (!supplierId && data.supplier.name) {
       const inserted = await db
         .insert(suppliers)
-        .values({ name: data.supplier.name, gstNumber: data.supplier.gstNumber, address: data.supplier.address })
+        .values({
+          name: data.supplier.name,
+          gstNumber: data.supplier.gstNumber,
+          dlNo: data.supplier.dlNo,
+          address: data.supplier.address,
+        })
         .returning();
       supplierId = inserted[0].id;
+    } else if (supplierId && data.supplier.dlNo) {
+      const [existingSupplier] = await db.select().from(suppliers).where(eq(suppliers.id, supplierId));
+      if (existingSupplier && !existingSupplier.dlNo) {
+        await db.update(suppliers).set({ dlNo: data.supplier.dlNo }).where(eq(suppliers.id, supplierId));
+      }
     }
 
     const [purchase] = await db
@@ -313,6 +351,7 @@ export const savePurchase = createServerFn({ method: "POST" })
       .values({
         supplierId,
         invoiceNumber: data.invoiceNumber,
+        serialNumber: data.serialNumber,
         invoiceDate: data.invoiceDate,
         billNumber: data.billNumber,
         invoiceTotal: data.invoiceTotal ?? 0,
@@ -331,6 +370,7 @@ export const savePurchase = createServerFn({ method: "POST" })
           .insert(medicines)
           .values({
             name: item.medicineNameRaw,
+            pack: item.pack ?? undefined,
             mrp: item.mrp,
             sellingPrice: item.sellingPrice ?? item.mrp,
             purchasePrice: item.purchasePrice,
@@ -345,6 +385,7 @@ export const savePurchase = createServerFn({ method: "POST" })
         purchaseId: purchase.id,
         medicineId,
         medicineNameRaw: item.medicineNameRaw,
+        pack: item.pack,
         batchNo: item.batchNo,
         expiryDate: item.expiryDate,
         manufactureDate: item.manufactureDate,

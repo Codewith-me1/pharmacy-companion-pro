@@ -149,7 +149,9 @@ export const getSale = createServerFn({ method: "GET" })
         gstPercent: saleItems.gstPercent,
         discount: saleItems.discount,
         medicineName: medicines.name,
+        pack: medicines.pack,
         batchNo: batches.batchNo,
+        expiryDate: batches.expiryDate,
       })
       .from(saleItems)
       .innerJoin(medicines, eq(medicines.id, saleItems.medicineId))

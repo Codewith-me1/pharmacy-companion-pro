@@ -8,6 +8,7 @@ export const suppliers = sqliteTable("suppliers", {
   id: id(),
   name: text("name").notNull(),
   gstNumber: text("gst_number"),
+  dlNo: text("dl_no"),
   address: text("address"),
   phone: text("phone"),
   creditDays: integer("credit_days").notNull().default(0),
@@ -22,6 +23,7 @@ export const medicines = sqliteTable("medicines", {
   brand: text("brand"),
   company: text("company"),
   category: text("category"),
+  pack: text("pack"),
   mrp: real("mrp").notNull().default(0),
   sellingPrice: real("selling_price").notNull().default(0),
   purchasePrice: real("purchase_price").notNull().default(0),
@@ -55,6 +57,7 @@ export const purchases = sqliteTable("purchases", {
   id: id(),
   supplierId: integer("supplier_id").references(() => suppliers.id),
   invoiceNumber: text("invoice_number"),
+  serialNumber: text("serial_number"),
   invoiceDate: text("invoice_date"),
   billNumber: text("bill_number"),
   invoiceTotal: real("invoice_total").notNull().default(0),
@@ -72,6 +75,7 @@ export const purchaseItems = sqliteTable("purchase_items", {
   purchaseId: integer("purchase_id").notNull().references(() => purchases.id),
   medicineId: integer("medicine_id").references(() => medicines.id),
   medicineNameRaw: text("medicine_name_raw").notNull(),
+  pack: text("pack"),
   batchNo: text("batch_no"),
   expiryDate: text("expiry_date"),
   manufactureDate: text("manufacture_date"),
@@ -149,6 +153,26 @@ export const saleItems = sqliteTable("sale_items", {
   salePrice: real("sale_price").notNull().default(0),
   gstPercent: real("gst_percent").notNull().default(12),
   discount: real("discount").notNull().default(0),
+});
+
+export const businessSettings = sqliteTable("business_settings", {
+  id: id(),
+  firmName: text("firm_name"),
+  dlNo: text("dl_no"),
+  gstNumber: text("gst_number"),
+  mobile: text("mobile"),
+  address: text("address"),
+  aiAssistantEnabled: integer("ai_assistant_enabled", { mode: "boolean" }).notNull().default(true),
+});
+
+export const emailSettings = sqliteTable("email_settings", {
+  id: id(),
+  email: text("email"),
+  imapHost: text("imap_host"),
+  imapPort: integer("imap_port").notNull().default(993),
+  useTls: integer("use_tls", { mode: "boolean" }).notNull().default(true),
+  password: text("password"), // app password, stored locally in plaintext — see settings UI note
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(false),
 });
 
 export const stockMovements = sqliteTable("stock_movements", {

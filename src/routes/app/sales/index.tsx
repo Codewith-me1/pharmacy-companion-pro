@@ -2,13 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Barcode, Plus, Printer, Search, ShoppingCart, Trash2 } from "lucide-react";
+import { Barcode, Dices, Plus, Printer, Search, ShoppingCart, Trash2 } from "lucide-react";
 import { listMedicines } from "@/lib/api/medicines.functions";
 import { listBatchesForMedicine } from "@/lib/api/stock.functions";
 import { listDoctors, getDoctorWithMedicines } from "@/lib/api/doctors.functions";
-import { listCustomers } from "@/lib/api/customers.functions";
+import { listCustomers, upsertCustomer } from "@/lib/api/customers.functions";
 import { createSale } from "@/lib/api/sales.functions";
+import { getBusinessSettings } from "@/lib/api/business-settings.functions";
 import { printBill, type PrintBillData } from "@/lib/print-bill";
+import { generateRandomCustomerName } from "@/lib/random-name";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,7 +19,9 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { formatInr } from "@/lib/format";
+import { formatInr, formatDate } from "@/lib/format";
+
+type BatchOption = Awaited<ReturnType<typeof listBatchesForMedicine>>[number];
 
 export const Route = createFileRoute("/app/sales/")({
   component: SalesPos,
@@ -27,8 +31,11 @@ type CartLine = {
   key: string;
   medicineId: number;
   medicineName: string;
+  pack: string | null;
   batchId: number;
   batchNo: string;
+  expiryDate: string;
+  supplierName: string | null;
   availableQty: number;
   mrp: number;
   salePrice: number;
@@ -49,6 +56,15 @@ function SalesPos() {
   const [paymentMode, setPaymentMode] = useState<"cash" | "upi" | "card" | "credit" | "split">("cash");
   const [discount, setDiscount] = useState(0);
   const [lastBill, setLastBill] = useState<PrintBillData | null>(null);
+  const [batchPicker, setBatchPicker] = useState<{
+    medicineId: number;
+    medicineName: string;
+    pack: string | null;
+    defaultQty: number;
+    batches: BatchOption[];
+  } | null>(null);
+  const [showNewCustomer, setShowNewCustomer] = useState(false);
+  const [newCustomerName, setNewCustomerName] = useState("");
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -74,25 +90,20 @@ function SalesPos() {
   });
   const { data: doctors } = useQuery({ queryKey: ["doctors"], queryFn: () => listDoctors() });
   const { data: customers } = useQuery({ queryKey: ["customers"], queryFn: () => listCustomers() });
+  const { data: business } = useQuery({ queryKey: ["business-settings"], queryFn: () => getBusinessSettings() });
   const { data: doctorDetail } = useQuery({
     queryKey: ["doctor-detail", doctorId],
     queryFn: () => getDoctorWithMedicines({ data: { id: doctorId! } }),
     enabled: doctorId != null,
   });
 
-  async function addMedicineToCart(medicineId: number, medicineName: string, defaultQty = 1) {
-    const batches = await queryClient.fetchQuery({
-      queryKey: ["batches", medicineId],
-      queryFn: () => listBatchesForMedicine({ data: { medicineId } }),
-    });
-    const available = batches.filter((b) => b.quantity > 0).sort((a, b) => a.expiryDate.localeCompare(b.expiryDate));
-    const batch = available[0];
-    if (!batch) {
-      toast.error(`${medicineName} has no available stock.`);
-      setSearch("");
-      setSearchOpen(false);
-      return;
-    }
+  function addBatchToCart(
+    medicineId: number,
+    medicineName: string,
+    pack: string | null,
+    batch: BatchOption,
+    defaultQty: number,
+  ) {
     setCart((c) => {
       const existing = c.find((l) => l.batchId === batch.id);
       if (existing) {
@@ -104,8 +115,11 @@ function SalesPos() {
           key: `${medicineId}-${batch.id}`,
           medicineId,
           medicineName,
+          pack,
           batchId: batch.id,
           batchNo: batch.batchNo,
+          expiryDate: batch.expiryDate,
+          supplierName: batch.supplierName,
           availableQty: batch.quantity,
           mrp: batch.mrp,
           salePrice: batch.mrp,
@@ -114,9 +128,38 @@ function SalesPos() {
         },
       ];
     });
+  }
+
+  async function selectMedicine(medicineId: number, medicineName: string, pack: string | null, defaultQty = 1) {
+    const batches = await queryClient.fetchQuery({
+      queryKey: ["batches", medicineId],
+      queryFn: () => listBatchesForMedicine({ data: { medicineId } }),
+    });
+    const available = batches.filter((b) => b.quantity > 0).sort((a, b) => a.expiryDate.localeCompare(b.expiryDate));
     setSearch("");
     setSearchOpen(false);
+    if (available.length === 0) {
+      toast.error(`${medicineName} has no available stock.`);
+      return;
+    }
+    if (available.length === 1) {
+      addBatchToCart(medicineId, medicineName, pack, available[0], defaultQty);
+      return;
+    }
+    setBatchPicker({ medicineId, medicineName, pack, defaultQty, batches: available });
   }
+
+  const createCustomerMutation = useMutation({
+    mutationFn: () => upsertCustomer({ data: { name: newCustomerName.trim() } }),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: ["customers"] });
+      setCustomerId(result.id);
+      setNewCustomerName("");
+      setShowNewCustomer(false);
+      toast.success("Customer added.");
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to add customer."),
+  });
 
   function updateLine(key: string, patch: Partial<CartLine>) {
     setCart((c) => c.map((l) => (l.key === key ? { ...l, ...patch } : l)));
@@ -155,20 +198,24 @@ function SalesPos() {
       setLastBill({
         billNumber: result.billNumber,
         billType,
-        createdAt: new Date().toLocaleString("en-IN"),
+        createdAt: new Date().toLocaleDateString("en-IN"),
+        firmName: business?.firmName,
+        dlNo: business?.dlNo,
+        gstNumber: business?.gstNumber,
+        phone: business?.mobile,
+        address: business?.address,
         customerName: customers?.find((c) => c.id === customerId)?.name ?? null,
         doctorName: doctors?.find((d) => d.id === doctorId)?.name ?? null,
-        paymentMode,
         items: cart.map((l) => ({
           medicineName: l.medicineName,
+          pack: l.pack,
           batchNo: l.batchNo,
+          expiryDate: l.expiryDate,
           quantity: l.quantity,
-          salePrice: l.salePrice,
+          rate: l.salePrice,
+          mrp: l.mrp,
         })),
-        subtotal,
-        gstAmount,
         discount,
-        total,
       });
       setCart([]);
       setDiscount(0);
@@ -204,7 +251,7 @@ function SalesPos() {
                   <button
                     key={m.id}
                     className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-accent"
-                    onClick={() => addMedicineToCart(m.id, m.name)}
+                    onClick={() => selectMedicine(m.id, m.name, m.pack)}
                   >
                     <span>{m.name}</span>
                     <span className="text-xs text-muted-foreground">Stock {m.totalStock} · {formatInr(m.mrp)}</span>
@@ -224,7 +271,7 @@ function SalesPos() {
                 if (e.key !== "Enter" || !barcode) return;
                 const matches = await listMedicines({ data: { search: barcode } });
                 if (matches.length === 1) {
-                  addMedicineToCart(matches[0].id, matches[0].name);
+                  selectMedicine(matches[0].id, matches[0].name, matches[0].pack);
                 } else if (matches.length === 0) {
                   toast.error("No medicine matched that barcode.");
                 } else {
@@ -244,7 +291,7 @@ function SalesPos() {
                 key={f.id}
                 variant="outline"
                 size="sm"
-                onClick={() => addMedicineToCart(f.medicineId, f.medicineName, f.defaultQty)}
+                onClick={() => selectMedicine(f.medicineId, f.medicineName, f.pack, f.defaultQty)}
               >
                 <Plus className="h-3 w-3" /> {f.medicineName}
               </Button>
@@ -259,6 +306,7 @@ function SalesPos() {
                 <TableRow>
                   <TableHead>Medicine</TableHead>
                   <TableHead>Batch</TableHead>
+                  <TableHead>Supplier</TableHead>
                   <TableHead className="text-right">Price</TableHead>
                   <TableHead className="text-right">Qty</TableHead>
                   <TableHead className="text-right">GST%</TableHead>
@@ -269,7 +317,7 @@ function SalesPos() {
               <TableBody>
                 {cart.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="p-10 text-center text-muted-foreground">
+                    <TableCell colSpan={8} className="p-10 text-center text-muted-foreground">
                       <ShoppingCart className="mx-auto mb-2 h-6 w-6" />
                       Cart is empty. Search a medicine to begin billing.
                     </TableCell>
@@ -279,6 +327,7 @@ function SalesPos() {
                   <TableRow key={l.key}>
                     <TableCell className="font-medium">{l.medicineName}</TableCell>
                     <TableCell>{l.batchNo}</TableCell>
+                    <TableCell className="text-muted-foreground">{l.supplierName || "—"}</TableCell>
                     <TableCell className="text-right">
                       <Input
                         type="number"
@@ -334,20 +383,55 @@ function SalesPos() {
               </Select>
             </div>
             <div className="flex flex-col gap-1">
-              <Label className="text-xs text-muted-foreground">Customer</Label>
-              <Select value={customerId?.toString() ?? "none"} onValueChange={(v) => setCustomerId(v === "none" ? null : Number(v))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Walk-in customer" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Walk-in customer</SelectItem>
-                  {customers?.map((c) => (
-                    <SelectItem key={c.id} value={c.id.toString()}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">Customer</Label>
+                <button
+                  type="button"
+                  className="text-xs font-medium text-primary hover:underline"
+                  onClick={() => setShowNewCustomer((v) => !v)}
+                >
+                  {showNewCustomer ? "Cancel" : "+ New"}
+                </button>
+              </div>
+              {showNewCustomer ? (
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Customer name"
+                    value={newCustomerName}
+                    onChange={(e) => setNewCustomerName(e.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    title="Generate a random name"
+                    onClick={() => setNewCustomerName(generateRandomCustomerName())}
+                  >
+                    <Dices className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={!newCustomerName.trim() || createCustomerMutation.isPending}
+                    onClick={() => createCustomerMutation.mutate()}
+                  >
+                    Add
+                  </Button>
+                </div>
+              ) : (
+                <Select value={customerId?.toString() ?? "none"} onValueChange={(v) => setCustomerId(v === "none" ? null : Number(v))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Walk-in customer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Walk-in customer</SelectItem>
+                    {customers?.map((c) => (
+                      <SelectItem key={c.id} value={c.id.toString()}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <div className="flex flex-col gap-1">
               <Label className="text-xs text-muted-foreground">Bill Type</Label>
@@ -422,16 +506,77 @@ function SalesPos() {
                     <span>
                       {item.medicineName} × {item.quantity}
                     </span>
-                    <span className="font-mono">{formatInr(item.salePrice * item.quantity)}</span>
+                    <span className="font-mono">{formatInr(item.rate * item.quantity)}</span>
                   </li>
                 ))}
               </ul>
-              <p className="text-base font-bold">Total: {formatInr(lastBill.total)}</p>
+              <p className="text-base font-bold">
+                Total:{" "}
+                {formatInr(
+                  Math.round(lastBill.items.reduce((s, i) => s + i.rate * i.quantity, 0) - lastBill.discount),
+                )}
+              </p>
               <Button onClick={() => printBill(lastBill)}>
                 <Printer className="h-4 w-4" /> Print Bill
               </Button>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!batchPicker} onOpenChange={(open) => !open && setBatchPicker(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Select Batch — {batchPicker?.medicineName}</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            Multiple batches available across suppliers. Soonest-to-expire is listed first.
+          </p>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Batch No.</TableHead>
+                <TableHead>Supplier</TableHead>
+                <TableHead>Expiry</TableHead>
+                <TableHead className="text-right">Qty</TableHead>
+                <TableHead className="text-right">MRP</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {batchPicker?.batches.map((b, i) => {
+                const daysToExpiry = Math.ceil((new Date(b.expiryDate).getTime() - Date.now()) / 86_400_000);
+                return (
+                  <TableRow key={b.id} className={i === 0 ? "bg-amber-500/5" : undefined}>
+                    <TableCell className="font-medium">{b.batchNo}</TableCell>
+                    <TableCell>{b.supplierName || "—"}</TableCell>
+                    <TableCell>
+                      {formatDate(b.expiryDate)}{" "}
+                      {daysToExpiry <= 90 && (
+                        <Badge variant={daysToExpiry <= 30 ? "destructive" : "secondary"} className="ml-1 text-[10px]">
+                          {daysToExpiry <= 0 ? "expired" : `${daysToExpiry}d left`}
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">{b.quantity}</TableCell>
+                    <TableCell className="text-right font-mono">{formatInr(b.mrp)}</TableCell>
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          if (!batchPicker) return;
+                          addBatchToCart(batchPicker.medicineId, batchPicker.medicineName, batchPicker.pack, b, batchPicker.defaultQty);
+                          setBatchPicker(null);
+                        }}
+                      >
+                        <Plus className="h-3.5 w-3.5" /> Add
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
         </DialogContent>
       </Dialog>
     </div>

@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import { listCustomers, upsertCustomer, getCustomer } from "@/lib/api/customers.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,18 +13,31 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { formatInr, formatDate } from "@/lib/format";
 
 export const Route = createFileRoute("/app/customers/")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    q: typeof search.q === "string" ? search.q : "",
+  }),
   component: CustomersPage,
 });
 
 const empty = { name: "", phone: "", address: "", gstNumber: "", creditBalance: 0, loyaltyPoints: 0 };
 
 function CustomersPage() {
+  const { q } = Route.useSearch();
+  const [search, setSearch] = useState(q);
+  useEffect(() => setSearch(q), [q]);
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [form, setForm] = useState(empty);
 
   const { data, isLoading } = useQuery({ queryKey: ["customers"], queryFn: () => listCustomers() });
+  const filtered = useMemo(
+    () =>
+      (data ?? []).filter(
+        (c) => !search || c.name.toLowerCase().includes(search.toLowerCase()) || (c.phone ?? "").includes(search),
+      ),
+    [data, search],
+  );
   const { data: detail } = useQuery({
     queryKey: ["customer-detail", selectedId],
     queryFn: () => getCustomer({ data: { id: selectedId! } }),
@@ -80,6 +93,11 @@ function CustomersPage() {
         </Dialog>
       </div>
 
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input className="pl-9" placeholder="Search customers…" value={search} onChange={(e) => setSearch(e.target.value)} />
+      </div>
+
       <Card>
         <CardContent className="p-0">
           <Table>
@@ -99,7 +117,14 @@ function CustomersPage() {
                   </TableCell>
                 </TableRow>
               )}
-              {data?.map((c) => (
+              {!isLoading && filtered.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={4} className="p-8 text-center text-muted-foreground">
+                    No customers match your search.
+                  </TableCell>
+                </TableRow>
+              )}
+              {filtered.map((c) => (
                 <TableRow key={c.id} className="cursor-pointer" onClick={() => setSelectedId(c.id)}>
                   <TableCell className="font-medium">{c.name}</TableCell>
                   <TableCell>{c.phone || "—"}</TableCell>

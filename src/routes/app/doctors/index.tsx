@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Search, Trash2 } from "lucide-react";
 import { listDoctors, upsertDoctor, getDoctorWithMedicines, addDoctorFavoriteMedicine, removeDoctorFavoriteMedicine } from "@/lib/api/doctors.functions";
 import { listMedicines } from "@/lib/api/medicines.functions";
 import { Button } from "@/components/ui/button";
@@ -14,12 +14,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { formatInr } from "@/lib/format";
 
 export const Route = createFileRoute("/app/doctors/")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    q: typeof search.q === "string" ? search.q : "",
+  }),
   component: DoctorsPage,
 });
 
 const empty = { name: "", hospital: "", clinic: "", phone: "", licenseNumber: "", specialization: "" };
 
 function DoctorsPage() {
+  const { q } = Route.useSearch();
+  const [search, setSearch] = useState(q);
+  useEffect(() => setSearch(q), [q]);
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -27,6 +33,10 @@ function DoctorsPage() {
   const [newMedId, setNewMedId] = useState<number | null>(null);
 
   const { data, isLoading } = useQuery({ queryKey: ["doctors"], queryFn: () => listDoctors() });
+  const filtered = useMemo(
+    () => (data ?? []).filter((d) => !search || d.name.toLowerCase().includes(search.toLowerCase())),
+    [data, search],
+  );
   const { data: medicines } = useQuery({ queryKey: ["medicines", ""], queryFn: () => listMedicines() });
   const { data: detail } = useQuery({
     queryKey: ["doctor-detail", selectedId],
@@ -104,6 +114,11 @@ function DoctorsPage() {
         </Dialog>
       </div>
 
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input className="pl-9" placeholder="Search doctors…" value={search} onChange={(e) => setSearch(e.target.value)} />
+      </div>
+
       <Card>
         <CardContent className="p-0">
           <Table>
@@ -123,7 +138,14 @@ function DoctorsPage() {
                   </TableCell>
                 </TableRow>
               )}
-              {data?.map((d) => (
+              {!isLoading && filtered.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={4} className="p-8 text-center text-muted-foreground">
+                    No doctors match your search.
+                  </TableCell>
+                </TableRow>
+              )}
+              {filtered.map((d) => (
                 <TableRow key={d.id} className="cursor-pointer" onClick={() => setSelectedId(d.id)}>
                   <TableCell className="font-medium">Dr. {d.name}</TableCell>
                   <TableCell>{d.specialization || "—"}</TableCell>

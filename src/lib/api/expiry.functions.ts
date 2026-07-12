@@ -18,6 +18,8 @@ export const getExpiryDashboard = createServerFn({ method: "GET" }).handler(asyn
       mrp: batches.mrp,
       medicineId: medicines.id,
       medicineName: medicines.name,
+      pack: medicines.pack,
+      supplierId: suppliers.id,
       supplierName: suppliers.name,
     })
     .from(batches)
@@ -43,11 +45,25 @@ export const getExpiryDashboard = createServerFn({ method: "GET" }).handler(asyn
     .filter((r) => r.daysToExpiry <= 30)
     .reduce((sum, r) => sum + r.estimatedLoss, 0);
 
+  const supplierMap = new Map<string, { supplierId: number | null; supplierName: string; items: typeof withDays }>();
+  for (const row of withDays) {
+    const key = row.supplierId != null ? String(row.supplierId) : "unknown";
+    const name = row.supplierName ?? "Unknown Supplier";
+    if (!supplierMap.has(key)) {
+      supplierMap.set(key, { supplierId: row.supplierId, supplierName: name, items: [] });
+    }
+    supplierMap.get(key)!.items.push(row);
+  }
+  const bySupplier = Array.from(supplierMap.values())
+    .map((s) => ({ ...s, count: s.items.length, estimatedLoss: s.items.reduce((sum, i) => sum + i.estimatedLoss, 0) }))
+    .sort((a, b) => b.count - a.count);
+
   return {
     expiringThisMonthCount: withDays.filter((r) => r.daysToExpiry >= 0 && r.daysToExpiry <= 30).length,
     totalEstimatedLoss,
     buckets,
     expired: expiredThisMonth,
     all: withDays,
+    bySupplier,
   };
 });

@@ -1,8 +1,8 @@
-import { useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Search } from "lucide-react";
-import { listMedicines, upsertMedicine, getMedicineWithBatches } from "@/lib/api/medicines.functions";
+import { listMedicines, upsertMedicine } from "@/lib/api/medicines.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,9 +17,12 @@ import {
   DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { formatDate, formatInr } from "@/lib/format";
+import { formatInr } from "@/lib/format";
 
 export const Route = createFileRoute("/app/inventory/")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    q: typeof search.q === "string" ? search.q : "",
+  }),
   component: Inventory,
 });
 
@@ -29,6 +32,7 @@ const emptyMedicine = {
   brand: "",
   company: "",
   category: "",
+  pack: "",
   mrp: 0,
   sellingPrice: 0,
   purchasePrice: 0,
@@ -41,21 +45,17 @@ const emptyMedicine = {
 };
 
 function Inventory() {
-  const [search, setSearch] = useState("");
+  const { q } = Route.useSearch();
+  const [search, setSearch] = useState(q);
+  useEffect(() => setSearch(q), [q]);
   const [addOpen, setAddOpen] = useState(false);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [form, setForm] = useState(emptyMedicine);
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const { data, isLoading } = useQuery({
     queryKey: ["medicines", search],
     queryFn: () => listMedicines({ data: { search } }),
-  });
-
-  const { data: detail } = useQuery({
-    queryKey: ["medicine-detail", selectedId],
-    queryFn: () => getMedicineWithBatches({ data: { id: selectedId! } }),
-    enabled: selectedId != null,
   });
 
   const createMutation = useMutation({
@@ -99,6 +99,9 @@ function Inventory() {
               </F>
               <F label="Category">
                 <Input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
+              </F>
+              <F label="Pack">
+                <Input placeholder="e.g. 10s, 200ML" value={form.pack} onChange={(e) => setForm({ ...form, pack: e.target.value })} />
               </F>
               <F label="Schedule">
                 <Input value={form.schedule} onChange={(e) => setForm({ ...form, schedule: e.target.value })} />
@@ -165,9 +168,12 @@ function Inventory() {
             <TableHeader>
               <TableRow>
                 <TableHead>Medicine</TableHead>
+                <TableHead>Pack</TableHead>
                 <TableHead>Salt</TableHead>
                 <TableHead>Company</TableHead>
                 <TableHead>Category</TableHead>
+                <TableHead>HSN</TableHead>
+                <TableHead className="text-right">GST%</TableHead>
                 <TableHead className="text-right">MRP</TableHead>
                 <TableHead className="text-right">Stock</TableHead>
                 <TableHead>Rack</TableHead>
@@ -176,17 +182,24 @@ function Inventory() {
             <TableBody>
               {isLoading && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground">
+                  <TableCell colSpan={10} className="text-center text-muted-foreground">
                     Loading…
                   </TableCell>
                 </TableRow>
               )}
               {data?.map((m) => (
-                <TableRow key={m.id} className="cursor-pointer" onClick={() => setSelectedId(m.id)}>
+                <TableRow
+                  key={m.id}
+                  className="cursor-pointer"
+                  onClick={() => navigate({ to: "/app/inventory/$medicineId", params: { medicineId: String(m.id) } })}
+                >
                   <TableCell className="font-medium">{m.name}</TableCell>
+                  <TableCell>{m.pack || "—"}</TableCell>
                   <TableCell>{m.salt || "—"}</TableCell>
                   <TableCell>{m.company || "—"}</TableCell>
                   <TableCell>{m.category || "—"}</TableCell>
+                  <TableCell>{m.hsnCode || "—"}</TableCell>
+                  <TableCell className="text-right">{m.gstPercent}%</TableCell>
                   <TableCell className="text-right font-mono">{formatInr(m.mrp)}</TableCell>
                   <TableCell className="text-right">
                     <Badge variant={m.totalStock === 0 ? "destructive" : m.totalStock <= 10 ? "secondary" : "outline"}>
@@ -200,50 +213,6 @@ function Inventory() {
           </Table>
         </CardContent>
       </Card>
-
-      <Dialog open={selectedId != null} onOpenChange={(open) => !open && setSelectedId(null)}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle>{detail?.medicine?.name}</DialogTitle>
-          </DialogHeader>
-          {detail && (
-            <div className="flex flex-col gap-3">
-              <div className="grid grid-cols-3 gap-2 text-sm text-muted-foreground">
-                <span>MRP: {formatInr(detail.medicine.mrp)}</span>
-                <span>Purchase: {formatInr(detail.medicine.purchasePrice)}</span>
-                <span>Rack: {detail.medicine.rackNumber || "—"}</span>
-              </div>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Batch</TableHead>
-                    <TableHead>Expiry</TableHead>
-                    <TableHead className="text-right">Qty</TableHead>
-                    <TableHead className="text-right">MRP</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {detail.batches.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground">
-                        No batches recorded
-                      </TableCell>
-                    </TableRow>
-                  )}
-                  {detail.batches.map((b) => (
-                    <TableRow key={b.id}>
-                      <TableCell>{b.batchNo}</TableCell>
-                      <TableCell>{formatDate(b.expiryDate)}</TableCell>
-                      <TableCell className="text-right">{b.quantity}</TableCell>
-                      <TableCell className="text-right font-mono">{formatInr(b.mrp)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
