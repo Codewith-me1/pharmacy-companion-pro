@@ -19,6 +19,16 @@ function getPool() {
     pool = new Pool({
       connectionString,
       ssl: isLocalHost ? undefined : { rejectUnauthorized: false },
+      // Without these, a stalled connection attempt (network blip, provider-side idle
+      // disconnect, etc.) can hang a request indefinitely instead of failing fast, and a
+      // dropped idle connection can throw an unhandled error that crashes the process.
+      max: 5,
+      idleTimeoutMillis: 10_000,
+      connectionTimeoutMillis: 10_000,
+      keepAlive: true,
+    });
+    pool.on("error", (err) => {
+      console.error("Postgres pool error (idle connection dropped):", err.message);
     });
   }
   return pool;
