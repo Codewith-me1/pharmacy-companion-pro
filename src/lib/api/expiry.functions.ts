@@ -25,7 +25,7 @@ export const getExpiryDashboard = createServerFn({ method: "GET" }).handler(asyn
     .from(batches)
     .innerJoin(medicines, sql`${medicines.id} = ${batches.medicineId}`)
     .leftJoin(suppliers, sql`${suppliers.id} = ${batches.supplierId}`)
-    .where(sql`${batches.quantity} > 0 and ${batches.expiryDate} <= date('now', '+90 days')`)
+    .where(sql`${batches.quantity} > 0 and ${batches.expiryDate}::date <= CURRENT_DATE + 90`)
     .orderBy(sql`${batches.expiryDate} asc`);
 
   const now = Date.now();

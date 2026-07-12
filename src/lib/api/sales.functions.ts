@@ -6,7 +6,7 @@ import { sales, saleItems, batches, medicines, customers, doctors, stockMovement
 
 async function nextBillNumber(prefix: string) {
   const db = getDb();
-  const [{ count }] = await db.select({ count: sql<number>`count(*)` }).from(sales);
+  const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(sales);
   return `${prefix}-${String(count + 1).padStart(5, "0")}`;
 }
 

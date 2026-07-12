@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { eq, desc, sql, like } from "drizzle-orm";
+import { eq, desc, sql, ilike } from "drizzle-orm";
 import { getDb } from "../db/client.server";
 import { purchases, purchaseItems, medicines, batches, suppliers, stockMovements } from "../db/schema";
 import { getServerConfig } from "../config.server";
@@ -114,7 +114,7 @@ async function buildDraftFromExtraction(extracted: z.infer<typeof extractedInvoi
     const found = await db
       .select()
       .from(suppliers)
-      .where(like(suppliers.name, `%${extracted.supplierName}%`))
+      .where(ilike(suppliers.name, `%${extracted.supplierName}%`))
       .limit(1);
     matchedSupplier = found[0];
   }
@@ -132,7 +132,7 @@ async function buildDraftFromExtraction(extracted: z.infer<typeof extractedInvoi
       }
 
       const existingMedicine = (
-        await db.select().from(medicines).where(like(medicines.name, item.medicineName)).limit(1)
+        await db.select().from(medicines).where(ilike(medicines.name, item.medicineName)).limit(1)
       )[0];
 
       if (existingMedicine) {

@@ -12,9 +12,9 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
-  // This app uses better-sqlite3 (a native Node module) for its database, which cannot run on
-  // Cloudflare Workers (no filesystem/native addons there). Target a plain Node server instead
-  // of the default Cloudflare preset so `npm run build` + `npm run preview` work locally.
+  // This app connects to PostgreSQL over a TCP socket (via `pg`), which cannot run on
+  // Cloudflare Workers. Target a plain Node server instead of the default Cloudflare
+  // preset so `npm run build` + `npm run preview` work locally.
   nitro: {
     preset: "node-server",
   },
@@ -22,10 +22,10 @@ export default defineConfig({
   // these for the client, regardless of which module graph path discovers them first.
   vite: {
     optimizeDeps: {
-      exclude: ["better-sqlite3", "imapflow", "mailparser"],
+      exclude: ["pg", "imapflow", "mailparser"],
     },
     ssr: {
-      external: ["better-sqlite3", "imapflow", "mailparser"],
+      external: ["pg", "imapflow", "mailparser"],
     },
   },
 });

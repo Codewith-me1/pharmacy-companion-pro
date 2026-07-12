@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { sql, like, or, desc } from "drizzle-orm";
+import { sql, ilike, or, desc } from "drizzle-orm";
 import { getDb } from "../db/client.server";
 import { medicines, batches, suppliers, sales, saleItems, purchases, customers } from "../db/schema";
 import { getServerConfig } from "../config.server";
@@ -18,7 +18,7 @@ async function toolExpiringMedicines(days: number) {
     .from(batches)
     .innerJoin(medicines, sql`${medicines.id} = ${batches.medicineId}`)
     .leftJoin(suppliers, sql`${suppliers.id} = ${batches.supplierId}`)
-    .where(sql`${batches.quantity} > 0 and ${batches.expiryDate} <= date('now', ${`+${days} days`})`)
+    .where(sql`${batches.quantity} > 0 and ${batches.expiryDate}::date <= CURRENT_DATE + ${days}`)
     .orderBy(sql`${batches.expiryDate} asc`)
     .limit(50);
 }
@@ -26,10 +26,10 @@ async function toolExpiringMedicines(days: number) {
 async function toolLowStockMedicines(threshold: number) {
   const db = getDb();
   return db
-    .select({ medicineName: medicines.name, totalStock: sql<number>`sum(${batches.quantity})` })
+    .select({ medicineName: medicines.name, totalStock: sql<number>`sum(${batches.quantity})::int` })
     .from(batches)
     .innerJoin(medicines, sql`${medicines.id} = ${batches.medicineId}`)
-    .groupBy(batches.medicineId)
+    .groupBy(batches.medicineId, medicines.name)
     .having(sql`sum(${batches.quantity}) <= ${threshold} and sum(${batches.quantity}) > 0`)
     .limit(50);
 }
@@ -37,7 +37,7 @@ async function toolLowStockMedicines(threshold: number) {
 async function toolOutOfStockMedicines() {
   const db = getDb();
   const rows = await db
-    .select({ medicineId: medicines.id, medicineName: medicines.name, totalStock: sql<number>`coalesce(sum(${batches.quantity}), 0)` })
+    .select({ medicineId: medicines.id, medicineName: medicines.name, totalStock: sql<number>`coalesce(sum(${batches.quantity}), 0)::int` })
     .from(medicines)
     .leftJoin(batches, sql`${batches.medicineId} = ${medicines.id}`)
     .groupBy(medicines.id);
@@ -54,11 +54,11 @@ async function toolSearchMedicines(query: string) {
       mrp: medicines.mrp,
       gstPercent: medicines.gstPercent,
       rackNumber: medicines.rackNumber,
-      totalStock: sql<number>`coalesce(sum(${batches.quantity}), 0)`,
+      totalStock: sql<number>`coalesce(sum(${batches.quantity}), 0)::int`,
     })
     .from(medicines)
     .leftJoin(batches, sql`${batches.medicineId} = ${medicines.id}`)
-    .where(or(like(medicines.name, term), like(medicines.salt, term), like(medicines.company, term)))
+    .where(or(ilike(medicines.name, term), ilike(medicines.salt, term), ilike(medicines.company, term)))
     .groupBy(medicines.id)
     .limit(25);
 }
@@ -66,13 +66,13 @@ async function toolSearchMedicines(query: string) {
 async function toolDashboardSummary() {
   const db = getDb();
   const [todaysSales] = await db
-    .select({ total: sql<number>`coalesce(sum(${sales.total}), 0)`, count: sql<number>`count(*)` })
+    .select({ total: sql<number>`coalesce(sum(${sales.total}), 0)`, count: sql<number>`count(*)::int` })
     .from(sales)
-    .where(sql`date(${sales.createdAt}) = date('now')`);
+    .where(sql`${sales.createdAt}::date = CURRENT_DATE`);
   const [todaysPurchases] = await db
-    .select({ total: sql<number>`coalesce(sum(${purchases.invoiceTotal}), 0)`, count: sql<number>`count(*)` })
+    .select({ total: sql<number>`coalesce(sum(${purchases.invoiceTotal}), 0)`, count: sql<number>`count(*)::int` })
     .from(purchases)
-    .where(sql`date(${purchases.createdAt}) = date('now')`);
+    .where(sql`${purchases.createdAt}::date = CURRENT_DATE`);
   const [stockValue] = await db
     .select({ value: sql<number>`coalesce(sum(${batches.quantity} * ${batches.purchasePrice}), 0)` })
     .from(batches);
@@ -87,7 +87,7 @@ async function toolDashboardSummary() {
     .from(saleItems)
     .innerJoin(sales, sql`${sales.id} = ${saleItems.saleId}`)
     .innerJoin(batches, sql`${batches.id} = ${saleItems.batchId}`)
-    .where(sql`date(${sales.createdAt}) = date('now')`);
+    .where(sql`${sales.createdAt}::date = CURRENT_DATE`);
   return {
     todaysSalesTotal: todaysSales.total,
     todaysSalesCount: todaysSales.count,
@@ -102,12 +102,12 @@ async function toolDashboardSummary() {
 async function toolTopSelling(days: number) {
   const db = getDb();
   return db
-    .select({ medicineName: medicines.name, totalQty: sql<number>`sum(${saleItems.quantity})` })
+    .select({ medicineName: medicines.name, totalQty: sql<number>`sum(${saleItems.quantity})::int` })
     .from(saleItems)
     .innerJoin(sales, sql`${sales.id} = ${saleItems.saleId}`)
     .innerJoin(medicines, sql`${medicines.id} = ${saleItems.medicineId}`)
-    .where(sql`${sales.createdAt} >= date('now', ${`-${days} days`})`)
-    .groupBy(saleItems.medicineId)
+    .where(sql`${sales.createdAt}::date >= CURRENT_DATE - ${days}`)
+    .groupBy(saleItems.medicineId, medicines.name)
     .orderBy(sql`sum(${saleItems.quantity}) desc`)
     .limit(10);
 }
@@ -124,7 +124,7 @@ async function toolSupplierInfo(query: string) {
       outstanding: suppliers.outstanding,
     })
     .from(suppliers)
-    .where(like(suppliers.name, term))
+    .where(ilike(suppliers.name, term))
     .limit(10);
 }
 
@@ -133,7 +133,7 @@ async function toolMedicineDetail(name: string) {
   const [medicine] = await db
     .select()
     .from(medicines)
-    .where(like(medicines.name, `%${name}%`))
+    .where(ilike(medicines.name, `%${name}%`))
     .limit(1);
   if (!medicine) return { found: false };
   const medicineBatches = await db

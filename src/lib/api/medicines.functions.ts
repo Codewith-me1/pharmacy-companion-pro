@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { eq, like, or, sql, asc, desc } from "drizzle-orm";
+import { eq, ilike, or, sql, asc, desc } from "drizzle-orm";
 import { getDb } from "../db/client.server";
 import { medicines, batches, suppliers, stockMovements, saleItems, sales } from "../db/schema";
 
@@ -26,17 +26,17 @@ export const listMedicines = createServerFn({ method: "GET" })
         barcode: medicines.barcode,
         schedule: medicines.schedule,
         rackNumber: medicines.rackNumber,
-        totalStock: sql<number>`coalesce(sum(${batches.quantity}), 0)`,
+        totalStock: sql<number>`coalesce(sum(${batches.quantity}), 0)::int`,
       })
       .from(medicines)
       .leftJoin(batches, eq(batches.medicineId, medicines.id))
       .where(
         search
           ? or(
-              like(medicines.name, `%${search}%`),
-              like(medicines.salt, `%${search}%`),
-              like(medicines.company, `%${search}%`),
-              like(medicines.barcode, `%${search}%`),
+              ilike(medicines.name, `%${search}%`),
+              ilike(medicines.salt, `%${search}%`),
+              ilike(medicines.company, `%${search}%`),
+              ilike(medicines.barcode, `%${search}%`),
             )
           : undefined,
       )
