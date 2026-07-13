@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search } from "lucide-react";
-import { listCustomers, upsertCustomer, getCustomer } from "@/lib/api/customers.functions";
+import { toast } from "sonner";
+import { Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { listCustomers, upsertCustomer, getCustomer, deleteCustomer } from "@/lib/api/customers.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,6 +11,16 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { formatInr, formatDate } from "@/lib/format";
 
 export const Route = createFileRoute("/app/customers/")({
@@ -27,7 +38,9 @@ function CustomersPage() {
   useEffect(() => setSearch(q), [q]);
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
   const [form, setForm] = useState(empty);
 
   const { data, isLoading } = useQuery({ queryKey: ["customers"], queryFn: () => listCustomers() });
@@ -44,12 +57,47 @@ function CustomersPage() {
     enabled: selectedId != null,
   });
 
-  const createMutation = useMutation({
-    mutationFn: () => upsertCustomer({ data: form }),
+  function openAdd() {
+    setEditingId(null);
+    setForm(empty);
+    setAddOpen(true);
+  }
+
+  function openEdit(c: NonNullable<typeof data>[number]) {
+    setEditingId(c.id);
+    setForm({
+      name: c.name,
+      phone: c.phone ?? "",
+      address: c.address ?? "",
+      gstNumber: c.gstNumber ?? "",
+      creditBalance: c.creditBalance,
+      loyaltyPoints: c.loyaltyPoints,
+    });
+    setAddOpen(true);
+  }
+
+  const saveMutation = useMutation({
+    mutationFn: () => upsertCustomer({ data: { ...form, id: editingId ?? undefined } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["customers"] });
+      toast.success(editingId ? "Customer updated." : "Customer added.");
       setAddOpen(false);
+      setEditingId(null);
       setForm(empty);
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to save customer."),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => deleteCustomer({ data: { id } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      toast.success("Customer deleted.");
+      setDeleteTarget(null);
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Failed to delete — it may have sales linked to it.");
+      setDeleteTarget(null);
     },
   });
 
@@ -60,15 +108,24 @@ function CustomersPage() {
           <h1 className="text-xl font-bold">Customers</h1>
           <p className="text-sm text-muted-foreground">Customer directory, credit and loyalty tracking.</p>
         </div>
-        <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <Dialog
+          open={addOpen}
+          onOpenChange={(open) => {
+            setAddOpen(open);
+            if (!open) {
+              setEditingId(null);
+              setForm(empty);
+            }
+          }}
+        >
           <DialogTrigger asChild>
-            <Button>
+            <Button onClick={openAdd}>
               <Plus className="h-4 w-4" /> Add Customer
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Add Customer</DialogTitle>
+              <DialogTitle>{editingId ? "Edit Customer" : "Add Customer"}</DialogTitle>
             </DialogHeader>
             <div className="grid grid-cols-2 gap-3">
               <F label="Name">
@@ -85,7 +142,7 @@ function CustomersPage() {
               </F>
             </div>
             <DialogFooter>
-              <Button onClick={() => createMutation.mutate()} disabled={!form.name || createMutation.isPending}>
+              <Button onClick={() => saveMutation.mutate()} disabled={!form.name || saveMutation.isPending}>
                 Save Customer
               </Button>
             </DialogFooter>
@@ -107,19 +164,20 @@ function CustomersPage() {
                 <TableHead>Phone</TableHead>
                 <TableHead className="text-right">Credit Balance</TableHead>
                 <TableHead className="text-right">Loyalty Points</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading && (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground">
+                  <TableCell colSpan={5} className="text-center text-muted-foreground">
                     Loading…
                   </TableCell>
                 </TableRow>
               )}
               {!isLoading && filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} className="p-8 text-center text-muted-foreground">
+                  <TableCell colSpan={5} className="p-8 text-center text-muted-foreground">
                     No customers match your search.
                   </TableCell>
                 </TableRow>
@@ -132,6 +190,30 @@ function CustomersPage() {
                     {c.creditBalance > 0 ? <Badge variant="destructive">{formatInr(c.creditBalance)}</Badge> : formatInr(c.creditBalance)}
                   </TableCell>
                   <TableCell className="text-right">{c.loyaltyPoints}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openEdit(c);
+                        }}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteTarget({ id: c.id, name: c.name });
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -173,6 +255,23 @@ function CustomersPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {deleteTarget?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This cannot be undone. If this customer has sales linked to them, deletion will be blocked.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -1,8 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search, Trash2 } from "lucide-react";
-import { listDoctors, upsertDoctor, getDoctorWithMedicines, addDoctorFavoriteMedicine, removeDoctorFavoriteMedicine } from "@/lib/api/doctors.functions";
+import { toast } from "sonner";
+import { Pencil, Plus, Search, Trash2 } from "lucide-react";
+import {
+  listDoctors,
+  upsertDoctor,
+  deleteDoctor,
+  getDoctorWithMedicines,
+  addDoctorFavoriteMedicine,
+  removeDoctorFavoriteMedicine,
+} from "@/lib/api/doctors.functions";
 import { listMedicines } from "@/lib/api/medicines.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +19,16 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { formatInr } from "@/lib/format";
 
 export const Route = createFileRoute("/app/doctors/")({
@@ -28,7 +46,9 @@ function DoctorsPage() {
   useEffect(() => setSearch(q), [q]);
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
   const [form, setForm] = useState(empty);
   const [newMedId, setNewMedId] = useState<number | null>(null);
 
@@ -44,12 +64,47 @@ function DoctorsPage() {
     enabled: selectedId != null,
   });
 
-  const createMutation = useMutation({
-    mutationFn: () => upsertDoctor({ data: form }),
+  function openAdd() {
+    setEditingId(null);
+    setForm(empty);
+    setAddOpen(true);
+  }
+
+  function openEdit(d: NonNullable<typeof data>[number]) {
+    setEditingId(d.id);
+    setForm({
+      name: d.name,
+      hospital: d.hospital ?? "",
+      clinic: d.clinic ?? "",
+      phone: d.phone ?? "",
+      licenseNumber: d.licenseNumber ?? "",
+      specialization: d.specialization ?? "",
+    });
+    setAddOpen(true);
+  }
+
+  const saveMutation = useMutation({
+    mutationFn: () => upsertDoctor({ data: { ...form, id: editingId ?? undefined } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["doctors"] });
+      toast.success(editingId ? "Doctor updated." : "Doctor added.");
       setAddOpen(false);
+      setEditingId(null);
       setForm(empty);
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to save doctor."),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => deleteDoctor({ data: { id } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["doctors"] });
+      toast.success("Doctor deleted.");
+      setDeleteTarget(null);
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Failed to delete — it may have sales linked to it.");
+      setDeleteTarget(null);
     },
   });
 
@@ -75,15 +130,24 @@ function DoctorsPage() {
             Doctor database with prescription templates — pick a doctor's favourites fast at billing time.
           </p>
         </div>
-        <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <Dialog
+          open={addOpen}
+          onOpenChange={(open) => {
+            setAddOpen(open);
+            if (!open) {
+              setEditingId(null);
+              setForm(empty);
+            }
+          }}
+        >
           <DialogTrigger asChild>
-            <Button>
+            <Button onClick={openAdd}>
               <Plus className="h-4 w-4" /> Add Doctor
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Add Doctor</DialogTitle>
+              <DialogTitle>{editingId ? "Edit Doctor" : "Add Doctor"}</DialogTitle>
             </DialogHeader>
             <div className="grid grid-cols-2 gap-3">
               <F label="Name">
@@ -106,7 +170,7 @@ function DoctorsPage() {
               </F>
             </div>
             <DialogFooter>
-              <Button onClick={() => createMutation.mutate()} disabled={!form.name || createMutation.isPending}>
+              <Button onClick={() => saveMutation.mutate()} disabled={!form.name || saveMutation.isPending}>
                 Save Doctor
               </Button>
             </DialogFooter>
@@ -128,19 +192,20 @@ function DoctorsPage() {
                 <TableHead>Specialization</TableHead>
                 <TableHead>Hospital / Clinic</TableHead>
                 <TableHead>Phone</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading && (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground">
+                  <TableCell colSpan={5} className="text-center text-muted-foreground">
                     Loading…
                   </TableCell>
                 </TableRow>
               )}
               {!isLoading && filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} className="p-8 text-center text-muted-foreground">
+                  <TableCell colSpan={5} className="p-8 text-center text-muted-foreground">
                     No doctors match your search.
                   </TableCell>
                 </TableRow>
@@ -151,6 +216,30 @@ function DoctorsPage() {
                   <TableCell>{d.specialization || "—"}</TableCell>
                   <TableCell>{d.hospital || d.clinic || "—"}</TableCell>
                   <TableCell>{d.phone || "—"}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openEdit(d);
+                        }}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteTarget({ id: d.id, name: d.name });
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -217,6 +306,23 @@ function DoctorsPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Dr. {deleteTarget?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This cannot be undone. If this doctor has sales linked to them, deletion will be blocked.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

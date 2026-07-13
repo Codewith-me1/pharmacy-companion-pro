@@ -53,6 +53,14 @@ export const upsertDoctor = createServerFn({ method: "POST" })
     return { id: inserted.id };
   });
 
+export const deleteDoctor = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.number() }))
+  .handler(async ({ data }) => {
+    const db = getDb();
+    await db.delete(doctors).where(eq(doctors.id, data.id));
+    return { ok: true };
+  });
+
 export const addDoctorFavoriteMedicine = createServerFn({ method: "POST" })
   .inputValidator(z.object({ doctorId: z.number(), medicineId: z.number(), defaultQty: z.number().default(1) }))
   .handler(async ({ data }) => {

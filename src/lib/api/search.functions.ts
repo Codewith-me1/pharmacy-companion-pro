@@ -14,7 +14,7 @@ export const globalSearch = createServerFn({ method: "GET" })
       db
         .select({ id: medicines.id, name: medicines.name, company: medicines.company, mrp: medicines.mrp })
         .from(medicines)
-        .where(or(ilike(medicines.name, term), ilike(medicines.salt, term), ilike(medicines.company, term), ilike(medicines.barcode, term)))
+        .where(or(ilike(medicines.name, term), ilike(medicines.company, term), ilike(medicines.barcode, term)))
         .limit(5),
       db
         .select({ id: suppliers.id, name: suppliers.name, outstanding: suppliers.outstanding })

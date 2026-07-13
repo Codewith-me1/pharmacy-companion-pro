@@ -21,7 +21,6 @@ export const suppliers = pgTable("suppliers", {
 export const medicines = pgTable("medicines", {
   id: id(),
   name: text("name").notNull(),
-  salt: text("salt"),
   brand: text("brand"),
   company: text("company"),
   category: text("category"),
@@ -32,9 +31,6 @@ export const medicines = pgTable("medicines", {
   gstPercent: doublePrecision("gst_percent").notNull().default(12),
   hsnCode: text("hsn_code"),
   barcode: text("barcode"),
-  storage: text("storage"),
-  schedule: text("schedule"),
-  rackNumber: text("rack_number"),
   createdAt: createdAt(),
 });
 

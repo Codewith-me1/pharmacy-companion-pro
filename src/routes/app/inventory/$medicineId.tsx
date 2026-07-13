@@ -50,11 +50,9 @@ function MedicineDetailPage() {
         <div className="flex flex-wrap items-baseline gap-3">
           <h1 className="text-xl font-bold">{m.name}</h1>
           {m.brand && <span className="text-sm text-muted-foreground">Brand: {m.brand}</span>}
-          {m.schedule && <Badge variant="outline">Schedule {m.schedule}</Badge>}
+          {m.category && <Badge variant="outline">{m.category}</Badge>}
         </div>
-        <p className="text-sm text-muted-foreground">
-          {[m.salt, m.company, m.category].filter(Boolean).join(" · ") || "—"}
-        </p>
+        <p className="text-sm text-muted-foreground">{[m.company, m.category].filter(Boolean).join(" · ") || "—"}</p>
       </div>
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -72,8 +70,6 @@ function MedicineDetailPage() {
           <Detail label="Pack" value={m.pack} />
           <Detail label="HSN Code" value={m.hsnCode} />
           <Detail label="Barcode" value={m.barcode} />
-          <Detail label="Rack Number" value={m.rackNumber} />
-          <Detail label="Storage" value={m.storage} />
           <Detail label="MRP" value={formatInr(m.mrp)} />
           <Detail label="Selling Price" value={formatInr(m.sellingPrice)} />
           <Detail label="Purchase Price" value={formatInr(m.purchasePrice)} />

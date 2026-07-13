@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { eq, ilike, or, sql, asc, desc } from "drizzle-orm";
+import { eq, ilike, or, and, gt, sql, asc, desc } from "drizzle-orm";
 import { getDb } from "../db/client.server";
 import { medicines, batches, suppliers, stockMovements, saleItems, sales } from "../db/schema";
 
@@ -13,7 +13,6 @@ export const listMedicines = createServerFn({ method: "GET" })
       .select({
         id: medicines.id,
         name: medicines.name,
-        salt: medicines.salt,
         brand: medicines.brand,
         company: medicines.company,
         category: medicines.category,
@@ -24,8 +23,6 @@ export const listMedicines = createServerFn({ method: "GET" })
         gstPercent: medicines.gstPercent,
         hsnCode: medicines.hsnCode,
         barcode: medicines.barcode,
-        schedule: medicines.schedule,
-        rackNumber: medicines.rackNumber,
         totalStock: sql<number>`coalesce(sum(${batches.quantity}), 0)::int`,
       })
       .from(medicines)
@@ -34,7 +31,6 @@ export const listMedicines = createServerFn({ method: "GET" })
         search
           ? or(
               ilike(medicines.name, `%${search}%`),
-              ilike(medicines.salt, `%${search}%`),
               ilike(medicines.company, `%${search}%`),
               ilike(medicines.barcode, `%${search}%`),
             )
@@ -43,6 +39,45 @@ export const listMedicines = createServerFn({ method: "GET" })
       .groupBy(medicines.id)
       .orderBy(asc(medicines.name));
     return rows;
+  });
+
+// Used by Sales/POS: searches medicine name/company/barcode AND batch number, returning
+// one row per in-stock batch (not per medicine) so the dropdown can show batch-level detail
+// directly. Soonest-to-expire first, so the batch a pharmacist should sell off first is on top.
+export const searchMedicineBatches = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ search: z.string().min(1) }))
+  .handler(async ({ data }) => {
+    const db = getDb();
+    const term = `%${data.search.trim()}%`;
+    return db
+      .select({
+        medicineId: medicines.id,
+        medicineName: medicines.name,
+        pack: medicines.pack,
+        category: medicines.category,
+        batchId: batches.id,
+        batchNo: batches.batchNo,
+        expiryDate: batches.expiryDate,
+        quantity: batches.quantity,
+        mrp: batches.mrp,
+        supplierId: batches.supplierId,
+        supplierName: suppliers.name,
+      })
+      .from(batches)
+      .innerJoin(medicines, eq(batches.medicineId, medicines.id))
+      .leftJoin(suppliers, eq(suppliers.id, batches.supplierId))
+      .where(
+        and(
+          gt(batches.quantity, 0),
+          or(
+            ilike(medicines.name, term),
+            ilike(medicines.company, term),
+            ilike(medicines.barcode, term),
+            ilike(batches.batchNo, term),
+          ),
+        ),
+      )
+      .orderBy(asc(batches.expiryDate));
   });
 
 export const getMedicineDetail = createServerFn({ method: "GET" })
@@ -116,7 +151,6 @@ export const upsertMedicine = createServerFn({ method: "POST" })
     z.object({
       id: z.number().optional(),
       name: z.string().min(1),
-      salt: z.string().optional(),
       brand: z.string().optional(),
       company: z.string().optional(),
       category: z.string().optional(),
@@ -127,17 +161,40 @@ export const upsertMedicine = createServerFn({ method: "POST" })
       gstPercent: z.number(),
       hsnCode: z.string().optional(),
       barcode: z.string().optional(),
-      storage: z.string().optional(),
-      schedule: z.string().optional(),
-      rackNumber: z.string().optional(),
+      // Initial stock — only used when creating a new medicine, so the medicine doesn't have
+      // to be created blank and then filled in later via Purchase Entry.
+      batchNo: z.string().optional(),
+      quantity: z.number().optional(),
+      expiryDate: z.string().optional(),
+      supplierId: z.number().optional(),
     }),
   )
   .handler(async ({ data }) => {
     const db = getDb();
-    if (data.id) {
-      await db.update(medicines).set(data).where(eq(medicines.id, data.id));
-      return { id: data.id };
+    const { id, batchNo, quantity, expiryDate, supplierId, ...medicineFields } = data;
+    if (id) {
+      await db.update(medicines).set(medicineFields).where(eq(medicines.id, id));
+      return { id };
     }
-    const [inserted] = await db.insert(medicines).values(data).returning();
+    const [inserted] = await db.insert(medicines).values(medicineFields).returning();
+    if (batchNo && quantity && quantity > 0 && expiryDate) {
+      await db.insert(batches).values({
+        medicineId: inserted.id,
+        batchNo,
+        expiryDate,
+        quantity,
+        purchasePrice: medicineFields.purchasePrice,
+        mrp: medicineFields.mrp,
+        supplierId: supplierId ?? null,
+      });
+    }
     return { id: inserted.id };
+  });
+
+export const deleteMedicine = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.number() }))
+  .handler(async ({ data }) => {
+    const db = getDb();
+    await db.delete(medicines).where(eq(medicines.id, data.id));
+    return { ok: true };
   });

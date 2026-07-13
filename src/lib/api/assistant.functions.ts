@@ -51,14 +51,14 @@ async function toolSearchMedicines(query: string) {
     .select({
       medicineName: medicines.name,
       company: medicines.company,
+      category: medicines.category,
       mrp: medicines.mrp,
       gstPercent: medicines.gstPercent,
-      rackNumber: medicines.rackNumber,
       totalStock: sql<number>`coalesce(sum(${batches.quantity}), 0)::int`,
     })
     .from(medicines)
     .leftJoin(batches, sql`${batches.medicineId} = ${medicines.id}`)
-    .where(or(ilike(medicines.name, term), ilike(medicines.salt, term), ilike(medicines.company, term)))
+    .where(or(ilike(medicines.name, term), ilike(medicines.company, term)))
     .groupBy(medicines.id)
     .limit(25);
 }
@@ -195,7 +195,7 @@ const TOOLS = [
     type: "function" as const,
     function: {
       name: "search_medicines",
-      description: "Search the medicine master by name, salt, or company, returning price, GST, rack and current stock.",
+      description: "Search the medicine master by name or company, returning price, GST, category and current stock.",
       parameters: {
         type: "object",
         properties: { query: { type: "string", description: "Search text" } },

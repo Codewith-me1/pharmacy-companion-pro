@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Barcode, Dices, Plus, Printer, Search, ShoppingCart, Trash2 } from "lucide-react";
-import { listMedicines } from "@/lib/api/medicines.functions";
+import { listMedicines, searchMedicineBatches } from "@/lib/api/medicines.functions";
 import { listBatchesForMedicine } from "@/lib/api/stock.functions";
 import { listDoctors, getDoctorWithMedicines } from "@/lib/api/doctors.functions";
 import { listCustomers, upsertCustomer } from "@/lib/api/customers.functions";
@@ -22,6 +22,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { formatInr, formatDate } from "@/lib/format";
 
 type BatchOption = Awaited<ReturnType<typeof listBatchesForMedicine>>[number];
+type CartableBatch = {
+  id: number;
+  batchNo: string;
+  expiryDate: string;
+  quantity: number;
+  mrp: number;
+  supplierName: string | null;
+};
 
 export const Route = createFileRoute("/app/sales/")({
   component: SalesPos,
@@ -84,8 +92,8 @@ function SalesPos() {
   }, []);
 
   const { data: searchResults } = useQuery({
-    queryKey: ["medicines", search],
-    queryFn: () => listMedicines({ data: { search } }),
+    queryKey: ["medicine-batch-search", search],
+    queryFn: () => searchMedicineBatches({ data: { search } }),
     enabled: search.length > 0,
   });
   const { data: doctors } = useQuery({ queryKey: ["doctors"], queryFn: () => listDoctors() });
@@ -101,7 +109,7 @@ function SalesPos() {
     medicineId: number,
     medicineName: string,
     pack: string | null,
-    batch: BatchOption,
+    batch: CartableBatch,
     defaultQty: number,
   ) {
     setCart((c) => {
@@ -237,7 +245,7 @@ function SalesPos() {
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               className="pl-9"
-              placeholder="Search medicine…"
+              placeholder="Search medicine or batch number…"
               value={search}
               onFocus={() => setSearchOpen(true)}
               onChange={(e) => {
@@ -246,17 +254,54 @@ function SalesPos() {
               }}
             />
             {searchOpen && searchResults && searchResults.length > 0 && (
-              <div className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-border bg-popover shadow-lg">
-                {searchResults.map((m) => (
-                  <button
-                    key={m.id}
-                    className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-accent"
-                    onClick={() => selectMedicine(m.id, m.name, m.pack)}
-                  >
-                    <span>{m.name}</span>
-                    <span className="text-xs text-muted-foreground">Stock {m.totalStock} · {formatInr(m.mrp)}</span>
-                  </button>
-                ))}
+              <div className="absolute z-10 mt-1 max-h-80 w-full overflow-y-auto rounded-md border border-border bg-popover shadow-lg">
+                {searchResults.map((b) => {
+                  const daysToExpiry = Math.ceil((new Date(b.expiryDate).getTime() - Date.now()) / 86_400_000);
+                  return (
+                    <button
+                      key={b.batchId}
+                      className="flex w-full items-center justify-between gap-3 border-b border-border/50 px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent"
+                      onClick={() => {
+                        addBatchToCart(
+                          b.medicineId,
+                          b.medicineName,
+                          b.pack,
+                          {
+                            id: b.batchId,
+                            batchNo: b.batchNo,
+                            expiryDate: b.expiryDate,
+                            quantity: b.quantity,
+                            mrp: b.mrp,
+                            supplierName: b.supplierName,
+                          },
+                          1,
+                        );
+                        setSearch("");
+                        setSearchOpen(false);
+                      }}
+                    >
+                      <div className="flex flex-col">
+                        <span className="font-medium">
+                          {b.medicineName}
+                          {b.pack ? ` (${b.pack})` : ""}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          Batch {b.batchNo} · {b.supplierName || "—"} · {formatInr(b.mrp)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {daysToExpiry <= 90 && (
+                          <Badge variant={daysToExpiry <= 30 ? "destructive" : "secondary"} className="text-[10px]">
+                            {daysToExpiry <= 0 ? "expired" : `${daysToExpiry}d left`}
+                          </Badge>
+                        )}
+                        <span className="rounded-md bg-green-500/15 px-2 py-0.5 text-xs font-semibold text-green-700 dark:text-green-400">
+                          {b.quantity} in stock
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -558,7 +603,11 @@ function SalesPos() {
                         </Badge>
                       )}
                     </TableCell>
-                    <TableCell className="text-right">{b.quantity}</TableCell>
+                    <TableCell className="text-right">
+                      <span className="inline-block rounded-md bg-green-500/15 px-2 py-0.5 font-mono font-semibold text-green-700 dark:text-green-400">
+                        {b.quantity}
+                      </span>
+                    </TableCell>
                     <TableCell className="text-right font-mono">{formatInr(b.mrp)}</TableCell>
                     <TableCell>
                       <Button

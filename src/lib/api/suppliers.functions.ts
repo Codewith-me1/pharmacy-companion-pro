@@ -43,3 +43,11 @@ export const upsertSupplier = createServerFn({ method: "POST" })
     const [inserted] = await db.insert(suppliers).values(data).returning();
     return { id: inserted.id };
   });
+
+export const deleteSupplier = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.number() }))
+  .handler(async ({ data }) => {
+    const db = getDb();
+    await db.delete(suppliers).where(eq(suppliers.id, data.id));
+    return { ok: true };
+  });

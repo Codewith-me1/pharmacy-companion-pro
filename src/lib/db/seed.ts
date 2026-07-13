@@ -19,14 +19,14 @@ async function seed() {
     .returning();
 
   const medicineRows = [
-    { name: "Paracetamol 650", salt: "Paracetamol", brand: "Crocin", company: "GSK", category: "Analgesic", mrp: 36, sellingPrice: 34, purchasePrice: 18, gstPercent: 12, hsnCode: "3004", rackNumber: "B-12", schedule: "OTC" },
-    { name: "Azithromycin 500", salt: "Azithromycin", brand: "Azithral", company: "Alembic", category: "Antibiotic", mrp: 120, sellingPrice: 112, purchasePrice: 68, gstPercent: 12, hsnCode: "3004", rackNumber: "C-04", schedule: "H" },
-    { name: "Montair LC", salt: "Montelukast + Levocetirizine", brand: "Montair LC", company: "Cipla", category: "Antihistamine", mrp: 145, sellingPrice: 138, purchasePrice: 82, gstPercent: 12, hsnCode: "3004", rackNumber: "C-11", schedule: "H" },
-    { name: "Pantoprazole 40", salt: "Pantoprazole", brand: "Pantocid", company: "Sun Pharma", category: "Antacid", mrp: 95, sellingPrice: 90, purchasePrice: 52, gstPercent: 12, hsnCode: "3004", rackNumber: "B-02", schedule: "H" },
-    { name: "Vitamin D3 60K", salt: "Cholecalciferol", brand: "Uprise D3", company: "Alkem", category: "Supplement", mrp: 32, sellingPrice: 30, purchasePrice: 16, gstPercent: 5, hsnCode: "3004", rackNumber: "D-06", schedule: "OTC" },
-    { name: "Amoxiclav 625", salt: "Amoxicillin + Clavulanate", brand: "Augmentin", company: "GSK", category: "Antibiotic", mrp: 210, sellingPrice: 198, purchasePrice: 128, gstPercent: 12, hsnCode: "3004", rackNumber: "C-05", schedule: "H" },
-    { name: "Cetirizine 10", salt: "Cetirizine", brand: "Cetzine", company: "GSK", category: "Antihistamine", mrp: 18, sellingPrice: 17, purchasePrice: 8, gstPercent: 12, hsnCode: "3004", rackNumber: "D-01", schedule: "OTC" },
-    { name: "ORS Sachet", salt: "Oral Rehydration Salts", brand: "Electral", company: "FDC", category: "Electrolyte", mrp: 22, sellingPrice: 21, purchasePrice: 11, gstPercent: 5, hsnCode: "3004", rackNumber: "D-09", schedule: "OTC" },
+    { name: "Paracetamol 650", brand: "Crocin", company: "GSK", category: "Tablet", mrp: 36, sellingPrice: 34, purchasePrice: 18, gstPercent: 12, hsnCode: "3004" },
+    { name: "Azithromycin 500", brand: "Azithral", company: "Alembic", category: "Tablet", mrp: 120, sellingPrice: 112, purchasePrice: 68, gstPercent: 12, hsnCode: "3004" },
+    { name: "Montair LC", brand: "Montair LC", company: "Cipla", category: "Tablet", mrp: 145, sellingPrice: 138, purchasePrice: 82, gstPercent: 12, hsnCode: "3004" },
+    { name: "Pantoprazole 40", brand: "Pantocid", company: "Sun Pharma", category: "Tablet", mrp: 95, sellingPrice: 90, purchasePrice: 52, gstPercent: 12, hsnCode: "3004" },
+    { name: "Vitamin D3 60K", brand: "Uprise D3", company: "Alkem", category: "Capsule", mrp: 32, sellingPrice: 30, purchasePrice: 16, gstPercent: 5, hsnCode: "3004" },
+    { name: "Amoxiclav 625", brand: "Augmentin", company: "GSK", category: "Tablet", mrp: 210, sellingPrice: 198, purchasePrice: 128, gstPercent: 12, hsnCode: "3004" },
+    { name: "Cetirizine 10", brand: "Cetzine", company: "GSK", category: "Tablet", mrp: 18, sellingPrice: 17, purchasePrice: 8, gstPercent: 12, hsnCode: "3004" },
+    { name: "ORS Sachet", brand: "Electral", company: "FDC", category: "Syrup", mrp: 22, sellingPrice: 21, purchasePrice: 11, gstPercent: 5, hsnCode: "3004" },
   ];
   const insertedMedicines = await db.insert(medicines).values(medicineRows).returning();
 
