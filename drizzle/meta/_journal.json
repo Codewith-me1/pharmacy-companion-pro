@@ -15,6 +15,13 @@
       "when": 1783948965829,
       "tag": "0001_closed_ulik",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784091158946,
+      "tag": "0002_gorgeous_arclight",
+      "breakpoints": true
     }
   ]
 }

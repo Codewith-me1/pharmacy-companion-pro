@@ -232,38 +232,100 @@ function SuppliersPage() {
       </Card>
 
       <Dialog open={selectedId != null} onOpenChange={(open) => !open && setSelectedId(null)}>
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{detail?.supplier?.name}</DialogTitle>
           </DialogHeader>
           {detail && (
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-5">
               <p className="text-sm text-muted-foreground">{detail.supplier.address}</p>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Invoice</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {detail.purchaseHistory.length === 0 && (
+
+              <div>
+                <h3 className="mb-2 text-sm font-semibold">Invoice History</h3>
+                <Table>
+                  <TableHeader>
                     <TableRow>
-                      <TableCell colSpan={3} className="text-center text-muted-foreground">
-                        No purchase history
-                      </TableCell>
+                      <TableHead>Invoice</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
                     </TableRow>
-                  )}
-                  {detail.purchaseHistory.map((p) => (
-                    <TableRow key={p.id}>
-                      <TableCell>{p.invoiceNumber || "—"}</TableCell>
-                      <TableCell>{formatDate(p.createdAt)}</TableCell>
-                      <TableCell className="text-right font-mono">{formatInr(p.invoiceTotal)}</TableCell>
+                  </TableHeader>
+                  <TableBody>
+                    {detail.purchaseHistory.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={3} className="text-center text-muted-foreground">
+                          No purchase history
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {detail.purchaseHistory.map((p) => (
+                      <TableRow key={p.id}>
+                        <TableCell>{p.invoiceNumber || "—"}</TableCell>
+                        <TableCell>{formatDate(p.createdAt)}</TableCell>
+                        <TableCell className="text-right font-mono">{formatInr(p.invoiceTotal)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div>
+                <h3 className="mb-2 text-sm font-semibold">
+                  Medicines Purchased ({detail.medicinesPurchased.length})
+                </h3>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Medicine</TableHead>
+                      <TableHead>Batch No.</TableHead>
+                      <TableHead>Purchased</TableHead>
+                      <TableHead>Expiry</TableHead>
+                      <TableHead className="text-right">Stock Left</TableHead>
+                      <TableHead className="text-right">Purchase ₹</TableHead>
+                      <TableHead className="text-right">MRP ₹</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {detail.medicinesPurchased.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center text-muted-foreground">
+                          No medicines purchased from this supplier yet.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {detail.medicinesPurchased.map((m) => {
+                      const daysToExpiry = Math.ceil(
+                        (new Date(m.expiryDate).getTime() - Date.now()) / 86_400_000,
+                      );
+                      return (
+                        <TableRow key={m.batchId}>
+                          <TableCell className="font-medium">
+                            {m.medicineName}
+                            {m.pack ? <span className="text-muted-foreground"> ({m.pack})</span> : ""}
+                          </TableCell>
+                          <TableCell>{m.batchNo}</TableCell>
+                          <TableCell>{formatDate(m.purchasedAt)}</TableCell>
+                          <TableCell>
+                            {formatDate(m.expiryDate)}{" "}
+                            {daysToExpiry <= 90 && (
+                              <Badge variant={daysToExpiry <= 30 ? "destructive" : "secondary"} className="ml-1 text-[10px]">
+                                {daysToExpiry <= 0 ? "expired" : `${daysToExpiry}d left`}
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Badge variant={m.quantity === 0 ? "destructive" : m.quantity <= 10 ? "secondary" : "outline"}>
+                              {m.quantity}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right font-mono">{formatInr(m.purchasePrice)}</TableCell>
+                          <TableCell className="text-right font-mono">{formatInr(m.mrp)}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           )}
         </DialogContent>

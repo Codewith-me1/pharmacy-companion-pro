@@ -54,6 +54,7 @@ const emptyMedicine = {
   sellingPrice: 0,
   purchasePrice: 0,
   gstPercent: 12,
+  discount: 0,
   hsnCode: "",
   barcode: "",
   batchNo: "",
@@ -98,6 +99,7 @@ function Inventory() {
       sellingPrice: m.sellingPrice,
       purchasePrice: m.purchasePrice,
       gstPercent: m.gstPercent,
+      discount: m.discount,
       hsnCode: m.hsnCode ?? "",
       barcode: m.barcode ?? "",
       batchNo: "",
@@ -306,6 +308,13 @@ function Inventory() {
                       type="number"
                       value={form.gstPercent}
                       onChange={(e) => setForm({ ...form, gstPercent: Number(e.target.value) })}
+                    />
+                  </F>
+                  <F label="Discount %">
+                    <Input
+                      type="number"
+                      value={form.discount}
+                      onChange={(e) => setForm({ ...form, discount: Number(e.target.value) })}
                     />
                   </F>
                   <F label="HSN Code">

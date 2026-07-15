@@ -74,6 +74,7 @@ function MedicineDetailPage() {
           <Detail label="Selling Price" value={formatInr(m.sellingPrice)} />
           <Detail label="Purchase Price" value={formatInr(m.purchasePrice)} />
           <Detail label="GST %" value={`${m.gstPercent}%`} />
+          <Detail label="Discount %" value={`${m.discount}%`} />
         </CardContent>
       </Card>
 

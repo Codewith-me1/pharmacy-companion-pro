@@ -29,6 +29,7 @@ export const medicines = pgTable("medicines", {
   sellingPrice: doublePrecision("selling_price").notNull().default(0),
   purchasePrice: doublePrecision("purchase_price").notNull().default(0),
   gstPercent: doublePrecision("gst_percent").notNull().default(12),
+  discount: doublePrecision("discount").notNull().default(0),
   hsnCode: text("hsn_code"),
   barcode: text("barcode"),
   createdAt: createdAt(),
@@ -175,6 +176,19 @@ export const businessSettings = pgTable("business_settings", {
   mobile: text("mobile"),
   address: text("address"),
   aiAssistantEnabled: boolean("ai_assistant_enabled").notNull().default(true),
+});
+
+export const billSettings = pgTable("bill_settings", {
+  id: id(),
+  showDoctor: boolean("show_doctor").notNull().default(true),
+  showCustomerAddress: boolean("show_customer_address").notNull().default(false),
+  showBatchNo: boolean("show_batch_no").notNull().default(true),
+  showExpiry: boolean("show_expiry").notNull().default(true),
+  showMrp: boolean("show_mrp").notNull().default(true),
+  showDiscountPercent: boolean("show_discount_percent").notNull().default(true),
+  footerNote: text("footer_note"),
+  termsText: text("terms_text"),
+  customFieldsJson: text("custom_fields_json"), // JSON array of { label, value }
 });
 
 export const emailSettings = pgTable("email_settings", {

@@ -9,6 +9,7 @@ import { listDoctors, getDoctorWithMedicines } from "@/lib/api/doctors.functions
 import { listCustomers, upsertCustomer } from "@/lib/api/customers.functions";
 import { createSale } from "@/lib/api/sales.functions";
 import { getBusinessSettings } from "@/lib/api/business-settings.functions";
+import { getBillSettings } from "@/lib/api/bill-settings.functions";
 import { printBill, type PrintBillData } from "@/lib/print-bill";
 import { generateRandomCustomerName } from "@/lib/random-name";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,8 @@ type CartableBatch = {
   quantity: number;
   mrp: number;
   supplierName: string | null;
+  discount?: number;
+  gstPercent?: number;
 };
 
 export const Route = createFileRoute("/app/sales/")({
@@ -71,8 +74,8 @@ function SalesPos() {
     defaultQty: number;
     batches: BatchOption[];
   } | null>(null);
-  const [showNewCustomer, setShowNewCustomer] = useState(false);
-  const [newCustomerName, setNewCustomerName] = useState("");
+  const [showNewCustomer, setShowNewCustomer] = useState(true);
+  const [newCustomerName, setNewCustomerName] = useState(() => generateRandomCustomerName());
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -99,6 +102,7 @@ function SalesPos() {
   const { data: doctors } = useQuery({ queryKey: ["doctors"], queryFn: () => listDoctors() });
   const { data: customers } = useQuery({ queryKey: ["customers"], queryFn: () => listCustomers() });
   const { data: business } = useQuery({ queryKey: ["business-settings"], queryFn: () => getBusinessSettings() });
+  const { data: billSettings } = useQuery({ queryKey: ["bill-settings"], queryFn: () => getBillSettings() });
   const { data: doctorDetail } = useQuery({
     queryKey: ["doctor-detail", doctorId],
     queryFn: () => getDoctorWithMedicines({ data: { id: doctorId! } }),
@@ -117,6 +121,8 @@ function SalesPos() {
       if (existing) {
         return c.map((l) => (l.batchId === batch.id ? { ...l, quantity: l.quantity + defaultQty } : l));
       }
+      const discountPercent = batch.discount ?? 0;
+      const salePrice = discountPercent > 0 ? Number((batch.mrp * (1 - discountPercent / 100)).toFixed(2)) : batch.mrp;
       return [
         ...c,
         {
@@ -130,8 +136,8 @@ function SalesPos() {
           supplierName: batch.supplierName,
           availableQty: batch.quantity,
           mrp: batch.mrp,
-          salePrice: batch.mrp,
-          gstPercent: 12,
+          salePrice,
+          gstPercent: batch.gstPercent ?? 12,
           quantity: defaultQty,
         },
       ];
@@ -213,6 +219,7 @@ function SalesPos() {
         phone: business?.mobile,
         address: business?.address,
         customerName: customers?.find((c) => c.id === customerId)?.name ?? null,
+        customerAddress: customers?.find((c) => c.id === customerId)?.address ?? null,
         doctorName: doctors?.find((d) => d.id === doctorId)?.name ?? null,
         items: cart.map((l) => ({
           medicineName: l.medicineName,
@@ -224,9 +231,13 @@ function SalesPos() {
           mrp: l.mrp,
         })),
         discount,
+        settings: billSettings,
       });
       setCart([]);
       setDiscount(0);
+      setCustomerId(null);
+      setShowNewCustomer(true);
+      setNewCustomerName(generateRandomCustomerName());
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to create sale."),
@@ -273,6 +284,8 @@ function SalesPos() {
                             quantity: b.quantity,
                             mrp: b.mrp,
                             supplierName: b.supplierName,
+                            discount: b.discount,
+                            gstPercent: b.gstPercent,
                           },
                           1,
                         );
@@ -390,7 +403,14 @@ function SalesPos() {
                         onChange={(e) => updateLine(l.key, { quantity: Math.min(Number(e.target.value), l.availableQty) })}
                       />
                     </TableCell>
-                    <TableCell className="text-right">{l.gstPercent}%</TableCell>
+                    <TableCell className="text-right">
+                      <Input
+                        type="number"
+                        className="w-16 text-right"
+                        value={l.gstPercent}
+                        onChange={(e) => updateLine(l.key, { gstPercent: Number(e.target.value) })}
+                      />
+                    </TableCell>
                     <TableCell className="text-right font-mono">{formatInr(l.salePrice * l.quantity)}</TableCell>
                     <TableCell>
                       <Button variant="ghost" size="icon" onClick={() => removeLine(l.key)}>
@@ -433,7 +453,13 @@ function SalesPos() {
                 <button
                   type="button"
                   className="text-xs font-medium text-primary hover:underline"
-                  onClick={() => setShowNewCustomer((v) => !v)}
+                  onClick={() =>
+                    setShowNewCustomer((v) => {
+                      const next = !v;
+                      if (next && !newCustomerName.trim()) setNewCustomerName(generateRandomCustomerName());
+                      return next;
+                    })
+                  }
                 >
                   {showNewCustomer ? "Cancel" : "+ New"}
                 </button>

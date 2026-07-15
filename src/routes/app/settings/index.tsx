@@ -15,15 +15,22 @@ import {
   Mail,
   CheckCircle2,
   XCircle,
+  Receipt,
+  Eye,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import { getBusinessSettings, saveBusinessSettings } from "@/lib/api/business-settings.functions";
 import { getEmailSettings, saveEmailSettings, testEmailConnection } from "@/lib/api/email-settings.functions";
+import { getBillSettings, saveBillSettings } from "@/lib/api/bill-settings.functions";
+import { printBill, DEFAULT_BILL_CUSTOMIZATION } from "@/lib/print-bill";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 
 export const Route = createFileRoute("/app/settings/")({
   component: SettingsPage,
@@ -141,6 +148,8 @@ function SettingsPage() {
       <AiAssistantCard />
 
       <EmailIntegrationCard />
+
+      <BillCustomizationCard />
 
       <div>
         <h2 className="mb-3 text-sm font-semibold text-muted-foreground">Coming Soon</h2>
@@ -303,6 +312,173 @@ function EmailIntegrationCard() {
           </Button>
           <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || !form.email || !form.imapHost}>
             Save Email Settings
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+const emptyBillSettings = { ...DEFAULT_BILL_CUSTOMIZATION };
+
+function BillCustomizationCard() {
+  const queryClient = useQueryClient();
+  const [form, setForm] = useState(emptyBillSettings);
+  const { data } = useQuery({ queryKey: ["bill-settings"], queryFn: () => getBillSettings() });
+  const { data: business } = useQuery({ queryKey: ["business-settings"], queryFn: () => getBusinessSettings() });
+
+  useEffect(() => {
+    if (data) setForm(data);
+  }, [data]);
+
+  const saveMutation = useMutation({
+    mutationFn: () => saveBillSettings({ data: form }),
+    onSuccess: () => {
+      toast.success("Bill customization saved.");
+      queryClient.invalidateQueries({ queryKey: ["bill-settings"] });
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to save bill customization."),
+  });
+
+  function toggle(key: keyof typeof form) {
+    setForm((f) => ({ ...f, [key]: !f[key] }));
+  }
+
+  function updateField(i: number, patch: Partial<{ label: string; value: string }>) {
+    setForm((f) => ({
+      ...f,
+      customFields: f.customFields.map((field, idx) => (idx === i ? { ...field, ...patch } : field)),
+    }));
+  }
+
+  function addField() {
+    setForm((f) => ({ ...f, customFields: [...f.customFields, { label: "", value: "" }] }));
+  }
+
+  function removeField(i: number) {
+    setForm((f) => ({ ...f, customFields: f.customFields.filter((_, idx) => idx !== i) }));
+  }
+
+  function previewBill() {
+    printBill({
+      billNumber: "PREVIEW-00001",
+      billType: "retail",
+      createdAt: new Date().toLocaleDateString("en-IN"),
+      firmName: business?.firmName || "Your Pharmacy Name",
+      dlNo: business?.dlNo,
+      gstNumber: business?.gstNumber,
+      phone: business?.mobile,
+      address: business?.address,
+      customerName: "Sample Customer",
+      customerAddress: "123 Sample Street, Sample City",
+      doctorName: "Sharma",
+      items: [
+        { medicineName: "Paracetamol 650", pack: "15s", batchNo: "A2312", expiryDate: "2027-01-01", quantity: 2, rate: 34, mrp: 36 },
+        { medicineName: "Azithromycin 500", pack: "3s", batchNo: "AZ1187", expiryDate: "2026-12-01", quantity: 1, rate: 112, mrp: 120 },
+      ],
+      discount: 5,
+      settings: form,
+    });
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <Receipt className="h-4 w-4" /> Bill Customization
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-5">
+        <p className="text-sm text-muted-foreground">
+          Control exactly what appears on printed bills — hide columns you don't use, replace the terms &amp;
+          conditions with your own, and add any extra fields your shop needs. Use Preview to see changes before
+          saving.
+        </p>
+
+        <div>
+          <h3 className="mb-2 text-xs font-semibold text-muted-foreground">Show on Bill</h3>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <label className="flex items-center gap-2 text-sm">
+              <Switch checked={form.showDoctor} onCheckedChange={() => toggle("showDoctor")} /> Doctor name
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <Switch checked={form.showCustomerAddress} onCheckedChange={() => toggle("showCustomerAddress")} />
+              Customer address
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <Switch checked={form.showBatchNo} onCheckedChange={() => toggle("showBatchNo")} /> Batch number
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <Switch checked={form.showExpiry} onCheckedChange={() => toggle("showExpiry")} /> Expiry date
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <Switch checked={form.showMrp} onCheckedChange={() => toggle("showMrp")} /> MRP column
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <Switch checked={form.showDiscountPercent} onCheckedChange={() => toggle("showDiscountPercent")} />
+              Discount % column
+            </label>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <Field label="Footer Note (optional)">
+            <Textarea
+              rows={2}
+              placeholder="e.g. Thank you for shopping with us!"
+              value={form.footerNote}
+              onChange={(e) => setForm({ ...form, footerNote: e.target.value })}
+            />
+          </Field>
+          <Field label="Terms & Conditions (one per line)">
+            <Textarea
+              rows={4}
+              value={form.termsText}
+              onChange={(e) => setForm({ ...form, termsText: e.target.value })}
+            />
+          </Field>
+        </div>
+
+        <div>
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-xs font-semibold text-muted-foreground">Custom Fields</h3>
+            <Button type="button" variant="outline" size="sm" onClick={addField}>
+              <Plus className="h-3.5 w-3.5" /> Add Field
+            </Button>
+          </div>
+          {form.customFields.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              No custom fields yet — add anything you want printed near the footer (e.g. "Return Policy", "Website").
+            </p>
+          )}
+          <div className="flex flex-col gap-2">
+            {form.customFields.map((field, i) => (
+              <div key={i} className="flex gap-2">
+                <Input
+                  placeholder="Label"
+                  value={field.label}
+                  onChange={(e) => updateField(i, { label: e.target.value })}
+                  className="w-40"
+                />
+                <Input
+                  placeholder="Value"
+                  value={field.value}
+                  onChange={(e) => updateField(i, { value: e.target.value })}
+                />
+                <Button type="button" variant="ghost" size="icon" onClick={() => removeField(i)}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={previewBill}>
+            <Eye className="h-4 w-4" /> Preview Bill
+          </Button>
+          <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+            Save Bill Customization
           </Button>
         </div>
       </CardContent>

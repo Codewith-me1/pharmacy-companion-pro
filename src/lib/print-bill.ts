@@ -8,6 +8,36 @@ export type PrintBillItem = {
   mrp: number;
 };
 
+export type BillCustomFieldItem = { label: string; value: string };
+
+export type BillCustomization = {
+  showDoctor: boolean;
+  showCustomerAddress: boolean;
+  showBatchNo: boolean;
+  showExpiry: boolean;
+  showMrp: boolean;
+  showDiscountPercent: boolean;
+  footerNote: string;
+  termsText: string; // one condition per line
+  customFields: BillCustomFieldItem[];
+};
+
+export const DEFAULT_BILL_CUSTOMIZATION: BillCustomization = {
+  showDoctor: true,
+  showCustomerAddress: false,
+  showBatchNo: true,
+  showExpiry: true,
+  showMrp: true,
+  showDiscountPercent: true,
+  footerNote: "",
+  termsText: [
+    "Goods once sold will not be taken back or exchanged.",
+    "All disputes are subject to local jurisdiction only.",
+    "Please retain this bill for any exchange or warranty claims.",
+  ].join("\n"),
+  customFields: [],
+};
+
 export type PrintBillData = {
   billNumber: string;
   billType: string;
@@ -18,9 +48,11 @@ export type PrintBillData = {
   phone?: string | null;
   address?: string | null;
   customerName?: string | null;
+  customerAddress?: string | null;
   doctorName?: string | null;
   items: PrintBillItem[];
   discount: number;
+  settings?: BillCustomization | null;
 };
 
 function esc(value: string) {
@@ -40,30 +72,66 @@ function formatExpiry(value?: string | null) {
   return `${month}/${year}`;
 }
 
+type Col = { header: string; align: "left" | "center" | "right"; cell: (item: PrintBillItem, i: number) => string };
+
+function buildColumns(settings: BillCustomization): Col[] {
+  const cols: Col[] = [
+    { header: "S.No", align: "center", cell: (_item, i) => String(i + 1) },
+    { header: "Item Description", align: "left", cell: (item) => esc(item.medicineName) },
+    { header: "Packing", align: "center", cell: (item) => esc(item.pack || "—") },
+  ];
+  if (settings.showBatchNo) {
+    cols.push({ header: "Batch No.", align: "center", cell: (item) => esc(item.batchNo || "—") });
+  }
+  if (settings.showExpiry) {
+    cols.push({ header: "Exp.", align: "center", cell: (item) => formatExpiry(item.expiryDate) });
+  }
+  cols.push({ header: "Qty", align: "center", cell: (item) => String(item.quantity) });
+  cols.push({ header: "Rate", align: "right", cell: (item) => money(item.rate) });
+  if (settings.showMrp) {
+    cols.push({ header: "MRP", align: "right", cell: (item) => money(item.mrp) });
+  }
+  if (settings.showDiscountPercent) {
+    cols.push({
+      header: "Dis%",
+      align: "right",
+      cell: (item) => {
+        const disPercent = item.mrp > 0 ? ((item.mrp - item.rate) / item.mrp) * 100 : 0;
+        return disPercent.toFixed(2);
+      },
+    });
+  }
+  cols.push({ header: "Amount", align: "right", cell: (item) => money(item.rate * item.quantity) });
+  return cols;
+}
+
 function renderCopy(bill: PrintBillData, label: "Original Copy" | "Duplicate Copy") {
+  const settings = bill.settings ?? DEFAULT_BILL_CUSTOMIZATION;
   const subtotal = bill.items.reduce((sum, i) => sum + i.rate * i.quantity, 0);
   const beforeRounding = subtotal - bill.discount;
   const grandTotal = Math.round(beforeRounding);
   const roundOff = grandTotal - beforeRounding;
 
+  const columns = buildColumns(settings);
+  const headerRow = columns.map((c) => `<th>${c.header}</th>`).join("");
   const rows = bill.items
     .map((item, i) => {
-      const amount = item.rate * item.quantity;
-      const disPercent = item.mrp > 0 ? ((item.mrp - item.rate) / item.mrp) * 100 : 0;
-      return `
-      <tr>
-        <td class="center">${i + 1}</td>
-        <td>${esc(item.medicineName)}</td>
-        <td class="center">${esc(item.pack || "—")}</td>
-        <td class="center">${esc(item.batchNo || "—")}</td>
-        <td class="center">${formatExpiry(item.expiryDate)}</td>
-        <td class="center">${item.quantity}</td>
-        <td class="right">${money(item.rate)}</td>
-        <td class="right">${money(item.mrp)}</td>
-        <td class="right">${disPercent.toFixed(2)}</td>
-        <td class="right">${money(amount)}</td>
-      </tr>`;
+      const cells = columns.map((c) => `<td class="${c.align === "left" ? "" : c.align}">${c.cell(item, i)}</td>`).join("");
+      return `<tr>${cells}</tr>`;
     })
+    .join("");
+
+  const customerLine = `<strong>Patient Name:</strong> ${esc(bill.customerName || "Walk-in Customer")}${
+    settings.showCustomerAddress && bill.customerAddress ? `<br/><span class="muted">${esc(bill.customerAddress)}</span>` : ""
+  }`;
+
+  const termsLines = settings.termsText
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const customFieldsHtml = settings.customFields
+    .filter((f) => f.label.trim())
+    .map((f) => `<p class="custom-field"><strong>${esc(f.label)}:</strong> ${esc(f.value)}</p>`)
     .join("");
 
   return `
@@ -86,41 +154,31 @@ function renderCopy(bill: PrintBillData, label: "Original Copy" | "Duplicate Cop
     <hr/>
     <table class="meta-table">
       <tr>
-        <td><strong>Patient Name:</strong> ${esc(bill.customerName || "Walk-in Customer")}</td>
+        <td>${customerLine}</td>
         <td><strong>Invoice No:</strong> ${esc(bill.billNumber)}</td>
       </tr>
       <tr>
-        <td><strong>Prescribed by Dr:</strong> ${bill.doctorName ? `Dr. ${esc(bill.doctorName)}` : "—"}</td>
+        <td>${settings.showDoctor ? `<strong>Prescribed by Dr:</strong> ${bill.doctorName ? `Dr. ${esc(bill.doctorName)}` : "—"}` : ""}</td>
         <td><strong>Date:</strong> ${esc(bill.createdAt)}</td>
       </tr>
     </table>
 
     <table class="items-table">
       <thead>
-        <tr>
-          <th>S.No</th>
-          <th>Item Description</th>
-          <th>Packing</th>
-          <th>Batch No.</th>
-          <th>Exp.</th>
-          <th>Qty</th>
-          <th>Rate</th>
-          <th>MRP</th>
-          <th>Dis%</th>
-          <th>Amount</th>
-        </tr>
+        <tr>${headerRow}</tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>
 
     <div class="bottom-row">
       <div class="terms">
-        <p class="terms-title">Terms &amp; Conditions</p>
-        <ol>
-          <li>Goods once sold will not be taken back or exchanged.</li>
-          <li>All disputes are subject to local jurisdiction only.</li>
-          <li>Please retain this bill for any exchange or warranty claims.</li>
-        </ol>
+        ${settings.footerNote ? `<p class="footer-note">${esc(settings.footerNote)}</p>` : ""}
+        ${
+          termsLines.length
+            ? `<p class="terms-title">Terms &amp; Conditions</p><ol>${termsLines.map((l) => `<li>${esc(l)}</li>`).join("")}</ol>`
+            : ""
+        }
+        ${customFieldsHtml}
         <p class="signature-line">for ${esc(bill.firmName || "Your Pharmacy Name")}</p>
         <p class="signature-space">&nbsp;</p>
         <p class="muted">Authorised Signatory</p>
@@ -163,6 +221,8 @@ export function printBill(bill: PrintBillData) {
   .right { text-align: right; }
   .bottom-row { display: flex; justify-content: space-between; gap: 16px; margin-top: 12px; align-items: flex-end; }
   .terms { flex: 1; font-size: 10px; }
+  .footer-note { font-size: 11px; font-weight: bold; margin: 0 0 6px; }
+  .custom-field { margin: 2px 0; font-size: 10px; }
   .terms-title { font-weight: bold; text-decoration: underline; margin: 0 0 4px; font-size: 11px; }
   .terms ol { margin: 0; padding-left: 16px; }
   .signature-line { margin-top: 18px; font-size: 11px; font-weight: bold; }

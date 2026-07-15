@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, and, or, ilike } from "drizzle-orm";
 import { getDb } from "../db/client.server";
 import { sales, saleItems, batches, medicines, customers, doctors, stockMovements } from "../db/schema";
 
@@ -97,9 +97,29 @@ export const createSale = createServerFn({ method: "POST" })
   });
 
 export const listSales = createServerFn({ method: "GET" })
-  .inputValidator(z.object({ limit: z.number().default(100) }).optional())
+  .inputValidator(
+    z
+      .object({
+        limit: z.number().default(100),
+        search: z.string().optional(),
+        dateFrom: z.string().optional(),
+        dateTo: z.string().optional(),
+        year: z.number().optional(),
+      })
+      .optional(),
+  )
   .handler(async ({ data }) => {
     const db = getDb();
+    const search = data?.search?.trim();
+    const conditions = [
+      search
+        ? or(ilike(sales.billNumber, `%${search}%`), ilike(customers.name, `%${search}%`))
+        : undefined,
+      data?.dateFrom ? sql`${sales.createdAt}::date >= ${data.dateFrom}::date` : undefined,
+      data?.dateTo ? sql`${sales.createdAt}::date <= ${data.dateTo}::date` : undefined,
+      data?.year ? sql`extract(year from ${sales.createdAt}::date) = ${data.year}` : undefined,
+    ].filter(Boolean);
+
     return db
       .select({
         id: sales.id,
@@ -113,9 +133,20 @@ export const listSales = createServerFn({ method: "GET" })
       })
       .from(sales)
       .leftJoin(customers, eq(customers.id, sales.customerId))
+      .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(desc(sales.createdAt))
       .limit(data?.limit ?? 100);
   });
+
+export const listSaleYears = createServerFn({ method: "GET" }).handler(async () => {
+  const db = getDb();
+  const rows = await db
+    .select({ year: sql<number>`extract(year from ${sales.createdAt}::date)::int` })
+    .from(sales)
+    .groupBy(sql`extract(year from ${sales.createdAt}::date)`)
+    .orderBy(sql`extract(year from ${sales.createdAt}::date) desc`);
+  return rows.map((r) => r.year);
+});
 
 export const getSale = createServerFn({ method: "GET" })
   .inputValidator(z.object({ id: z.number() }))
@@ -134,6 +165,7 @@ export const getSale = createServerFn({ method: "GET" })
         paymentStatus: sales.paymentStatus,
         createdAt: sales.createdAt,
         customerName: customers.name,
+        customerAddress: customers.address,
         doctorName: doctors.name,
       })
       .from(sales)

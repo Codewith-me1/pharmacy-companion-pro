@@ -21,6 +21,7 @@ export const listMedicines = createServerFn({ method: "GET" })
         sellingPrice: medicines.sellingPrice,
         purchasePrice: medicines.purchasePrice,
         gstPercent: medicines.gstPercent,
+        discount: medicines.discount,
         hsnCode: medicines.hsnCode,
         barcode: medicines.barcode,
         totalStock: sql<number>`coalesce(sum(${batches.quantity}), 0)::int`,
@@ -60,6 +61,8 @@ export const searchMedicineBatches = createServerFn({ method: "GET" })
         expiryDate: batches.expiryDate,
         quantity: batches.quantity,
         mrp: batches.mrp,
+        discount: medicines.discount,
+        gstPercent: medicines.gstPercent,
         supplierId: batches.supplierId,
         supplierName: suppliers.name,
       })
@@ -159,6 +162,7 @@ export const upsertMedicine = createServerFn({ method: "POST" })
       sellingPrice: z.number(),
       purchasePrice: z.number(),
       gstPercent: z.number(),
+      discount: z.number().default(0),
       hsnCode: z.string().optional(),
       barcode: z.string().optional(),
       // Initial stock — only used when creating a new medicine, so the medicine doesn't have

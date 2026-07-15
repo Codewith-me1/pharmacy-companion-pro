@@ -26,9 +26,12 @@ export const listBatchesForMedicine = createServerFn({ method: "GET" })
         supplierId: batches.supplierId,
         supplierName: suppliers.name,
         purchaseId: batches.purchaseId,
+        discount: medicines.discount,
+        gstPercent: medicines.gstPercent,
         createdAt: batches.createdAt,
       })
       .from(batches)
+      .innerJoin(medicines, eq(medicines.id, batches.medicineId))
       .leftJoin(suppliers, eq(suppliers.id, batches.supplierId))
       .where(eq(batches.medicineId, data.medicineId))
       .orderBy(asc(batches.expiryDate));

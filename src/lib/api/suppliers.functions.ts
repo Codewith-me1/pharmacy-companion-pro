@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { eq, desc } from "drizzle-orm";
 import { getDb } from "../db/client.server";
-import { suppliers, purchases } from "../db/schema";
+import { suppliers, purchases, batches, medicines } from "../db/schema";
 
 export const listSuppliers = createServerFn({ method: "GET" }).handler(async () => {
   const db = getDb();
@@ -19,7 +19,29 @@ export const getSupplier = createServerFn({ method: "GET" })
       .from(purchases)
       .where(eq(purchases.supplierId, data.id))
       .orderBy(desc(purchases.createdAt));
-    return { supplier, purchaseHistory };
+
+    // Every medicine ever bought from this supplier, batch by batch, with its expiry status —
+    // so clicking a supplier answers "what have we bought from them, and how much is left/expiring".
+    const medicinesPurchased = await db
+      .select({
+        batchId: batches.id,
+        medicineId: medicines.id,
+        medicineName: medicines.name,
+        pack: medicines.pack,
+        category: medicines.category,
+        batchNo: batches.batchNo,
+        expiryDate: batches.expiryDate,
+        quantity: batches.quantity,
+        purchasePrice: batches.purchasePrice,
+        mrp: batches.mrp,
+        purchasedAt: batches.createdAt,
+      })
+      .from(batches)
+      .innerJoin(medicines, eq(medicines.id, batches.medicineId))
+      .where(eq(batches.supplierId, data.id))
+      .orderBy(desc(batches.createdAt));
+
+    return { supplier, purchaseHistory, medicinesPurchased };
   });
 
 export const upsertSupplier = createServerFn({ method: "POST" })
