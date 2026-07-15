@@ -569,6 +569,11 @@ function SalesPos() {
           </DialogHeader>
           {lastBill && (
             <div className="flex flex-col gap-2 text-sm">
+              <div className="rounded-md border border-dashed border-border p-2 text-xs text-muted-foreground">
+                <p className="font-medium text-foreground">{lastBill.firmName || "Your Pharmacy Name"}</p>
+                {lastBill.address && <p>{lastBill.address}</p>}
+                {lastBill.phone && <p>Phone: {lastBill.phone}</p>}
+              </div>
               {lastBill.customerName && <p className="text-muted-foreground">Customer: {lastBill.customerName}</p>}
               {lastBill.doctorName && <p className="text-muted-foreground">Doctor: Dr. {lastBill.doctorName}</p>}
               <ul className="max-h-40 overflow-y-auto rounded-md border border-border p-2 text-xs">

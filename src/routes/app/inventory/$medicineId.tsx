@@ -30,7 +30,7 @@ function MedicineDetailPage() {
       <div className="flex flex-col items-center gap-3 p-16 text-center text-muted-foreground">
         <p>Medicine not found.</p>
         <Button asChild variant="outline">
-          <Link to="/app/inventory">Back to Inventory</Link>
+          <Link to="/app/inventory" search={{ q: "" }}>Back to Inventory</Link>
         </Button>
       </div>
     );
@@ -43,7 +43,7 @@ function MedicineDetailPage() {
     <div className="flex flex-col gap-6">
       <div>
         <Button asChild variant="ghost" size="sm" className="mb-2 -ml-2">
-          <Link to="/app/inventory">
+          <Link to="/app/inventory" search={{ q: "" }}>
             <ArrowLeft className="h-4 w-4" /> Back to Inventory
           </Link>
         </Button>

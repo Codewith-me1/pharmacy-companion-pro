@@ -285,35 +285,40 @@ function Inventory() {
                   <F label="MRP">
                     <Input
                       type="number"
-                      value={form.mrp}
+                      placeholder="0"
+                      value={form.mrp || ""}
                       onChange={(e) => setForm({ ...form, mrp: Number(e.target.value) })}
                     />
                   </F>
                   <F label="Selling Price">
                     <Input
                       type="number"
-                      value={form.sellingPrice}
+                      placeholder="0"
+                      value={form.sellingPrice || ""}
                       onChange={(e) => setForm({ ...form, sellingPrice: Number(e.target.value) })}
                     />
                   </F>
                   <F label="Purchase Price">
                     <Input
                       type="number"
-                      value={form.purchasePrice}
+                      placeholder="0"
+                      value={form.purchasePrice || ""}
                       onChange={(e) => setForm({ ...form, purchasePrice: Number(e.target.value) })}
                     />
                   </F>
                   <F label="GST %">
                     <Input
                       type="number"
-                      value={form.gstPercent}
+                      placeholder="0"
+                      value={form.gstPercent || ""}
                       onChange={(e) => setForm({ ...form, gstPercent: Number(e.target.value) })}
                     />
                   </F>
                   <F label="Discount %">
                     <Input
                       type="number"
-                      value={form.discount}
+                      placeholder="0"
+                      value={form.discount || ""}
                       onChange={(e) => setForm({ ...form, discount: Number(e.target.value) })}
                     />
                   </F>
@@ -338,7 +343,8 @@ function Inventory() {
                       <F label="Stock">
                         <Input
                           type="number"
-                          value={form.quantity}
+                          placeholder="0"
+                          value={form.quantity || ""}
                           onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })}
                         />
                       </F>

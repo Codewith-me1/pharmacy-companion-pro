@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Pencil, Plus, Search, Trash2 } from "lucide-react";
-import { listSuppliers, upsertSupplier, getSupplier, deleteSupplier } from "@/lib/api/suppliers.functions";
+import { listSuppliers, upsertSupplier, deleteSupplier } from "@/lib/api/suppliers.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,7 +21,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { formatInr, formatDate } from "@/lib/format";
+import { formatInr } from "@/lib/format";
 
 export const Route = createFileRoute("/app/suppliers/")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -30,16 +30,16 @@ export const Route = createFileRoute("/app/suppliers/")({
   component: SuppliersPage,
 });
 
-const empty = { name: "", gstNumber: "", address: "", phone: "", creditDays: 30, outstanding: 0 };
+const empty = { name: "", gstNumber: "", dlNo: "", address: "", phone: "", creditDays: 30, outstanding: 0 };
 
 function SuppliersPage() {
   const { q } = Route.useSearch();
   const [search, setSearch] = useState(q);
   useEffect(() => setSearch(q), [q]);
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [addOpen, setAddOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
   const [form, setForm] = useState(empty);
 
@@ -48,11 +48,6 @@ function SuppliersPage() {
     () => (data ?? []).filter((s) => !search || s.name.toLowerCase().includes(search.toLowerCase())),
     [data, search],
   );
-  const { data: detail } = useQuery({
-    queryKey: ["supplier-detail", selectedId],
-    queryFn: () => getSupplier({ data: { id: selectedId! } }),
-    enabled: selectedId != null,
-  });
 
   function openAdd() {
     setEditingId(null);
@@ -65,6 +60,7 @@ function SuppliersPage() {
     setForm({
       name: s.name,
       gstNumber: s.gstNumber ?? "",
+      dlNo: s.dlNo ?? "",
       address: s.address ?? "",
       phone: s.phone ?? "",
       creditDays: s.creditDays,
@@ -131,6 +127,9 @@ function SuppliersPage() {
               <F label="GST Number">
                 <Input value={form.gstNumber} onChange={(e) => setForm({ ...form, gstNumber: e.target.value })} />
               </F>
+              <F label="D.L. No">
+                <Input value={form.dlNo} onChange={(e) => setForm({ ...form, dlNo: e.target.value })} />
+              </F>
               <F label="Phone">
                 <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
               </F>
@@ -188,7 +187,11 @@ function SuppliersPage() {
                 </TableRow>
               )}
               {filtered.map((s) => (
-                <TableRow key={s.id} className="cursor-pointer" onClick={() => setSelectedId(s.id)}>
+                <TableRow
+                  key={s.id}
+                  className="cursor-pointer"
+                  onClick={() => navigate({ to: "/app/suppliers/$supplierId", params: { supplierId: String(s.id) } })}
+                >
                   <TableCell className="font-medium">{s.name}</TableCell>
                   <TableCell>{s.gstNumber || "—"}</TableCell>
                   <TableCell>{s.phone || "—"}</TableCell>
@@ -230,106 +233,6 @@ function SuppliersPage() {
           </Table>
         </CardContent>
       </Card>
-
-      <Dialog open={selectedId != null} onOpenChange={(open) => !open && setSelectedId(null)}>
-        <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{detail?.supplier?.name}</DialogTitle>
-          </DialogHeader>
-          {detail && (
-            <div className="flex flex-col gap-5">
-              <p className="text-sm text-muted-foreground">{detail.supplier.address}</p>
-
-              <div>
-                <h3 className="mb-2 text-sm font-semibold">Invoice History</h3>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Invoice</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {detail.purchaseHistory.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={3} className="text-center text-muted-foreground">
-                          No purchase history
-                        </TableCell>
-                      </TableRow>
-                    )}
-                    {detail.purchaseHistory.map((p) => (
-                      <TableRow key={p.id}>
-                        <TableCell>{p.invoiceNumber || "—"}</TableCell>
-                        <TableCell>{formatDate(p.createdAt)}</TableCell>
-                        <TableCell className="text-right font-mono">{formatInr(p.invoiceTotal)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-
-              <div>
-                <h3 className="mb-2 text-sm font-semibold">
-                  Medicines Purchased ({detail.medicinesPurchased.length})
-                </h3>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Medicine</TableHead>
-                      <TableHead>Batch No.</TableHead>
-                      <TableHead>Purchased</TableHead>
-                      <TableHead>Expiry</TableHead>
-                      <TableHead className="text-right">Stock Left</TableHead>
-                      <TableHead className="text-right">Purchase ₹</TableHead>
-                      <TableHead className="text-right">MRP ₹</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {detail.medicinesPurchased.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={7} className="text-center text-muted-foreground">
-                          No medicines purchased from this supplier yet.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                    {detail.medicinesPurchased.map((m) => {
-                      const daysToExpiry = Math.ceil(
-                        (new Date(m.expiryDate).getTime() - Date.now()) / 86_400_000,
-                      );
-                      return (
-                        <TableRow key={m.batchId}>
-                          <TableCell className="font-medium">
-                            {m.medicineName}
-                            {m.pack ? <span className="text-muted-foreground"> ({m.pack})</span> : ""}
-                          </TableCell>
-                          <TableCell>{m.batchNo}</TableCell>
-                          <TableCell>{formatDate(m.purchasedAt)}</TableCell>
-                          <TableCell>
-                            {formatDate(m.expiryDate)}{" "}
-                            {daysToExpiry <= 90 && (
-                              <Badge variant={daysToExpiry <= 30 ? "destructive" : "secondary"} className="ml-1 text-[10px]">
-                                {daysToExpiry <= 0 ? "expired" : `${daysToExpiry}d left`}
-                              </Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Badge variant={m.quantity === 0 ? "destructive" : m.quantity <= 10 ? "secondary" : "outline"}>
-                              {m.quantity}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right font-mono">{formatInr(m.purchasePrice)}</TableCell>
-                          <TableCell className="text-right font-mono">{formatInr(m.mrp)}</TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>

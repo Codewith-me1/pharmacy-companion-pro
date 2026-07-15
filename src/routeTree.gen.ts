@@ -24,6 +24,7 @@ import { Route as AppExpiryIndexRouteImport } from './routes/app/expiry/index'
 import { Route as AppDoctorsIndexRouteImport } from './routes/app/doctors/index'
 import { Route as AppCustomersIndexRouteImport } from './routes/app/customers/index'
 import { Route as AppBillingIndexRouteImport } from './routes/app/billing/index'
+import { Route as AppSuppliersSupplierIdRouteImport } from './routes/app/suppliers/$supplierId'
 import { Route as AppPurchasesNewRouteImport } from './routes/app/purchases/new'
 import { Route as AppInventoryMedicineIdRouteImport } from './routes/app/inventory/$medicineId'
 
@@ -102,6 +103,11 @@ const AppBillingIndexRoute = AppBillingIndexRouteImport.update({
   path: '/billing/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSuppliersSupplierIdRoute = AppSuppliersSupplierIdRouteImport.update({
+  id: '/suppliers/$supplierId',
+  path: '/suppliers/$supplierId',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppPurchasesNewRoute = AppPurchasesNewRouteImport.update({
   id: '/purchases/new',
   path: '/purchases/new',
@@ -120,6 +126,7 @@ export interface FileRoutesByFullPath {
   '/app/': typeof AppIndexRoute
   '/app/inventory/$medicineId': typeof AppInventoryMedicineIdRoute
   '/app/purchases/new': typeof AppPurchasesNewRoute
+  '/app/suppliers/$supplierId': typeof AppSuppliersSupplierIdRoute
   '/app/billing/': typeof AppBillingIndexRoute
   '/app/customers/': typeof AppCustomersIndexRoute
   '/app/doctors/': typeof AppDoctorsIndexRoute
@@ -138,6 +145,7 @@ export interface FileRoutesByTo {
   '/app': typeof AppIndexRoute
   '/app/inventory/$medicineId': typeof AppInventoryMedicineIdRoute
   '/app/purchases/new': typeof AppPurchasesNewRoute
+  '/app/suppliers/$supplierId': typeof AppSuppliersSupplierIdRoute
   '/app/billing': typeof AppBillingIndexRoute
   '/app/customers': typeof AppCustomersIndexRoute
   '/app/doctors': typeof AppDoctorsIndexRoute
@@ -158,6 +166,7 @@ export interface FileRoutesById {
   '/app/': typeof AppIndexRoute
   '/app/inventory/$medicineId': typeof AppInventoryMedicineIdRoute
   '/app/purchases/new': typeof AppPurchasesNewRoute
+  '/app/suppliers/$supplierId': typeof AppSuppliersSupplierIdRoute
   '/app/billing/': typeof AppBillingIndexRoute
   '/app/customers/': typeof AppCustomersIndexRoute
   '/app/doctors/': typeof AppDoctorsIndexRoute
@@ -179,6 +188,7 @@ export interface FileRouteTypes {
     | '/app/'
     | '/app/inventory/$medicineId'
     | '/app/purchases/new'
+    | '/app/suppliers/$supplierId'
     | '/app/billing/'
     | '/app/customers/'
     | '/app/doctors/'
@@ -197,6 +207,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/app/inventory/$medicineId'
     | '/app/purchases/new'
+    | '/app/suppliers/$supplierId'
     | '/app/billing'
     | '/app/customers'
     | '/app/doctors'
@@ -216,6 +227,7 @@ export interface FileRouteTypes {
     | '/app/'
     | '/app/inventory/$medicineId'
     | '/app/purchases/new'
+    | '/app/suppliers/$supplierId'
     | '/app/billing/'
     | '/app/customers/'
     | '/app/doctors/'
@@ -341,6 +353,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppBillingIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/suppliers/$supplierId': {
+      id: '/app/suppliers/$supplierId'
+      path: '/suppliers/$supplierId'
+      fullPath: '/app/suppliers/$supplierId'
+      preLoaderRoute: typeof AppSuppliersSupplierIdRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/purchases/new': {
       id: '/app/purchases/new'
       path: '/purchases/new'
@@ -363,6 +382,7 @@ interface AppRouteChildren {
   AppIndexRoute: typeof AppIndexRoute
   AppInventoryMedicineIdRoute: typeof AppInventoryMedicineIdRoute
   AppPurchasesNewRoute: typeof AppPurchasesNewRoute
+  AppSuppliersSupplierIdRoute: typeof AppSuppliersSupplierIdRoute
   AppBillingIndexRoute: typeof AppBillingIndexRoute
   AppCustomersIndexRoute: typeof AppCustomersIndexRoute
   AppDoctorsIndexRoute: typeof AppDoctorsIndexRoute
@@ -381,6 +401,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppIndexRoute: AppIndexRoute,
   AppInventoryMedicineIdRoute: AppInventoryMedicineIdRoute,
   AppPurchasesNewRoute: AppPurchasesNewRoute,
+  AppSuppliersSupplierIdRoute: AppSuppliersSupplierIdRoute,
   AppBillingIndexRoute: AppBillingIndexRoute,
   AppCustomersIndexRoute: AppCustomersIndexRoute,
   AppDoctorsIndexRoute: AppDoctorsIndexRoute,

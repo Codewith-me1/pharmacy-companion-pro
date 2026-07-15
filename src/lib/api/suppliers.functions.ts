@@ -50,6 +50,7 @@ export const upsertSupplier = createServerFn({ method: "POST" })
       id: z.number().optional(),
       name: z.string().min(1),
       gstNumber: z.string().optional(),
+      dlNo: z.string().optional(),
       address: z.string().optional(),
       phone: z.string().optional(),
       creditDays: z.number().default(0),

@@ -57,10 +57,18 @@ CommandInput.displayName = CommandPrimitive.Input.displayName;
 const CommandList = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive.List>,
   React.ComponentPropsWithoutRef<typeof CommandPrimitive.List>
->(({ className, ...props }, ref) => (
+>(({ className, onWheel, ...props }, ref) => (
   <CommandPrimitive.List
     ref={ref}
     className={cn("max-h-[300px] overflow-y-auto overflow-x-hidden", className)}
+    // When this list is nested inside a modal (e.g. a Popover opened from within a Dialog),
+    // Radix's scroll-lock listens for wheel events on the document to stop the page from
+    // scrolling and cancels them — including wheel events meant to scroll this list itself.
+    // Stopping propagation here keeps the cancellation from ever reaching that listener.
+    onWheel={(e) => {
+      e.stopPropagation();
+      onWheel?.(e);
+    }}
     {...props}
   />
 ));
