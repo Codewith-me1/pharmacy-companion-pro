@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard,
   ScanLine,
@@ -85,9 +85,13 @@ export function AppShell({
   const navigate = useNavigate();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
+  const queryClient = useQueryClient();
   const logoutMutation = useMutation({
     mutationFn: () => logout(),
-    onSuccess: () => navigate({ to: "/" }),
+    onSuccess: () => {
+      queryClient.clear();
+      navigate({ to: "/" });
+    },
   });
 
   return (

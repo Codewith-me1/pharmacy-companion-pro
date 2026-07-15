@@ -27,6 +27,17 @@ export const listMedicines = createServerFn({ method: "GET" })
           hsnCode: medicines.hsnCode,
           barcode: medicines.barcode,
           totalStock: sql<number>`coalesce(sum(${batches.quantity}), 0)::int`,
+          // The batch a pharmacist should reach for right now — soonest-to-expire among batches
+          // that still have stock — plus how many other in-stock batches exist behind it.
+          primaryBatchNo: sql<string | null>`(
+            select ${batches.batchNo} from ${batches}
+            where ${batches.medicineId} = ${medicines.id} and ${batches.quantity} > 0
+            order by ${batches.expiryDate} asc limit 1
+          )`,
+          otherBatchCount: sql<number>`(
+            select greatest(count(*)::int - 1, 0) from ${batches}
+            where ${batches.medicineId} = ${medicines.id} and ${batches.quantity} > 0
+          )`,
         })
         .from(medicines)
         .leftJoin(batches, eq(batches.medicineId, medicines.id))

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Pill } from "lucide-react";
 import { getCurrentUser, login } from "@/lib/api/auth.functions";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ export const Route = createFileRoute("/login")({
 
 function LoginPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +26,11 @@ function LoginPage() {
   const loginMutation = useMutation({
     mutationFn: () => login({ data: { email, password } }),
     onSuccess: () => {
+      // The query cache is a single in-memory store for the whole browser tab — without
+      // clearing it, whatever the previously logged-in account had cached (medicines, sales,
+      // dashboard stats...) would flash on screen for this account too until each query
+      // happened to refetch on its own.
+      queryClient.clear();
       navigate({ to: "/app/dashboard" });
     },
     onError: (err) => setError(err instanceof Error ? err.message : "Failed to log in."),

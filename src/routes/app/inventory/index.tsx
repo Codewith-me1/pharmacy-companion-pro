@@ -404,20 +404,19 @@ function Inventory() {
             <TableHeader>
               <TableRow>
                 <TableHead>Medicine</TableHead>
-                <TableHead>Pack</TableHead>
+                <TableHead>Batch No.</TableHead>
                 <TableHead>Company</TableHead>
                 <TableHead>Category</TableHead>
-                <TableHead>HSN</TableHead>
                 <TableHead className="text-right">GST%</TableHead>
                 <TableHead className="text-right">MRP</TableHead>
-                <TableHead className="text-right">Stock</TableHead>
+                <TableHead className="text-right">Available Qty</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading && (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground">
                     Loading…
                   </TableCell>
                 </TableRow>
@@ -428,11 +427,26 @@ function Inventory() {
                   className="cursor-pointer"
                   onClick={() => navigate({ to: "/app/inventory/$medicineId", params: { medicineId: String(m.id) } })}
                 >
-                  <TableCell className="font-medium">{m.name}</TableCell>
-                  <TableCell>{m.pack || "—"}</TableCell>
+                  <TableCell>
+                    <div className="font-medium">{m.name}</div>
+                    {m.pack && <div className="text-xs font-normal text-muted-foreground">{m.pack}</div>}
+                  </TableCell>
+                  <TableCell>
+                    {m.primaryBatchNo ? (
+                      <span className="inline-flex items-center gap-1">
+                        {m.primaryBatchNo}
+                        {m.otherBatchCount > 0 && (
+                          <span className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+                            +{m.otherBatchCount}
+                          </span>
+                        )}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
                   <TableCell>{m.company || "—"}</TableCell>
                   <TableCell>{m.category || "—"}</TableCell>
-                  <TableCell>{m.hsnCode || "—"}</TableCell>
                   <TableCell className="text-right">{m.gstPercent}%</TableCell>
                   <TableCell className="text-right font-mono">{formatInr(m.mrp)}</TableCell>
                   <TableCell className="text-right">

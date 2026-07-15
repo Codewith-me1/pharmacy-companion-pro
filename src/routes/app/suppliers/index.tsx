@@ -163,6 +163,7 @@ function SuppliersPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-10">#</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>GST</TableHead>
                 <TableHead>Phone</TableHead>
@@ -174,24 +175,25 @@ function SuppliersPage() {
             <TableBody>
               {isLoading && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center text-muted-foreground">
                     Loading…
                   </TableCell>
                 </TableRow>
               )}
               {!isLoading && filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="p-8 text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="p-8 text-center text-muted-foreground">
                     No suppliers match your search.
                   </TableCell>
                 </TableRow>
               )}
-              {filtered.map((s) => (
+              {filtered.map((s, i) => (
                 <TableRow
                   key={s.id}
                   className="cursor-pointer"
                   onClick={() => navigate({ to: "/app/suppliers/$supplierId", params: { supplierId: String(s.id) } })}
                 >
+                  <TableCell className="text-muted-foreground">{i + 1}</TableCell>
                   <TableCell className="font-medium">{s.name}</TableCell>
                   <TableCell>{s.gstNumber || "—"}</TableCell>
                   <TableCell>{s.phone || "—"}</TableCell>

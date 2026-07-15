@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Pill } from "lucide-react";
 import { getCurrentUser, signup } from "@/lib/api/auth.functions";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ export const Route = createFileRoute("/signup")({
 
 function SignupPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [name, setName] = useState("");
   const [pharmacyName, setPharmacyName] = useState("");
   const [email, setEmail] = useState("");
@@ -27,6 +28,8 @@ function SignupPage() {
   const signupMutation = useMutation({
     mutationFn: () => signup({ data: { name, pharmacyName: pharmacyName || undefined, email, password } }),
     onSuccess: () => {
+      // Same as login — a brand new account must never see another session's cached data.
+      queryClient.clear();
       navigate({ to: "/app/dashboard" });
     },
     onError: (err) => setError(err instanceof Error ? err.message : "Failed to sign up."),

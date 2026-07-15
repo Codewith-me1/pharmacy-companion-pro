@@ -98,6 +98,16 @@ export const createSale = createServerFn({ method: "POST" })
     });
   });
 
+const paymentModeFilter = z.enum(["cash", "upi", "card", "credit", "other"]).optional();
+
+function paymentModeCondition(mode: z.infer<typeof paymentModeFilter>) {
+  if (!mode) return undefined;
+  // "other" covers anything that isn't one of the well-known modes (e.g. "split"), so the
+  // filter chips stay exhaustive without needing a chip per obscure payment type.
+  if (mode === "other") return sql`${sales.paymentMode} not in ('cash', 'upi', 'card', 'credit')`;
+  return eq(sales.paymentMode, mode);
+}
+
 export const listSales = createServerFn({ method: "GET" })
   .inputValidator(
     z
@@ -107,6 +117,7 @@ export const listSales = createServerFn({ method: "GET" })
         dateFrom: z.string().optional(),
         dateTo: z.string().optional(),
         year: z.number().optional(),
+        paymentMode: paymentModeFilter,
       })
       .optional(),
   )
@@ -116,11 +127,12 @@ export const listSales = createServerFn({ method: "GET" })
       const search = data?.search?.trim();
       const conditions = [
         search
-          ? or(ilike(sales.billNumber, `%${search}%`), ilike(customers.name, `%${search}%`))
+          ? or(ilike(sales.billNumber, `%${search}%`), ilike(customers.name, `%${search}%`), ilike(customers.phone, `%${search}%`))
           : undefined,
         data?.dateFrom ? sql`${sales.createdAt}::date >= ${data.dateFrom}::date` : undefined,
         data?.dateTo ? sql`${sales.createdAt}::date <= ${data.dateTo}::date` : undefined,
         data?.year ? sql`extract(year from ${sales.createdAt}::date) = ${data.year}` : undefined,
+        paymentModeCondition(data?.paymentMode),
       ].filter(Boolean);
 
       return db
@@ -128,17 +140,57 @@ export const listSales = createServerFn({ method: "GET" })
           id: sales.id,
           billNumber: sales.billNumber,
           billType: sales.billType,
+          discount: sales.discount,
+          gstAmount: sales.gstAmount,
           total: sales.total,
           paymentMode: sales.paymentMode,
           paymentStatus: sales.paymentStatus,
           createdAt: sales.createdAt,
           customerName: customers.name,
+          customerPhone: customers.phone,
         })
         .from(sales)
         .leftJoin(customers, eq(customers.id, sales.customerId))
         .where(conditions.length ? and(...conditions) : undefined)
         .orderBy(desc(sales.createdAt))
         .limit(data?.limit ?? 100);
+    });
+  });
+
+export const getBillingStats = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ dateFrom: z.string().optional(), dateTo: z.string().optional() }).optional())
+  .handler(async ({ data }) => {
+    const userId = await requireUserId();
+    return withTenant(userId, async (db) => {
+      const conditions = [
+        data?.dateFrom ? sql`${sales.createdAt}::date >= ${data.dateFrom}::date` : undefined,
+        data?.dateTo ? sql`${sales.createdAt}::date <= ${data.dateTo}::date` : undefined,
+      ].filter(Boolean);
+      const where = conditions.length ? and(...conditions) : undefined;
+
+      const byMode = await db
+        .select({ paymentMode: sales.paymentMode, total: sql<number>`coalesce(sum(${sales.total}), 0)`, count: sql<number>`count(*)::int` })
+        .from(sales)
+        .where(where)
+        .groupBy(sales.paymentMode);
+
+      const totalSales = byMode.reduce((sum, r) => sum + r.total, 0);
+      const invoiceCount = byMode.reduce((sum, r) => sum + r.count, 0);
+      const sumFor = (mode: string) => byMode.find((r) => r.paymentMode === mode)?.total ?? 0;
+      const countFor = (mode: string) => byMode.find((r) => r.paymentMode === mode)?.count ?? 0;
+
+      return {
+        totalSales,
+        invoiceCount,
+        cashSales: sumFor("cash"),
+        cashCount: countFor("cash"),
+        upiSales: sumFor("upi"),
+        upiCount: countFor("upi"),
+        cardSales: sumFor("card"),
+        cardCount: countFor("card"),
+        creditSales: sumFor("credit"),
+        creditCount: countFor("credit"),
+      };
     });
   });
 
