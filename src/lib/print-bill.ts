@@ -202,9 +202,11 @@ export function printBill(bill: PrintBillData) {
 <title>Bill ${esc(bill.billNumber)}</title>
 <style>
   * { box-sizing: border-box; }
-  body { font-family: Arial, Helvetica, sans-serif; color: #111; padding: 12px; }
-  .copy { max-width: 780px; margin: 0 auto 20px; border: 1px solid #111; padding: 16px; position: relative; }
-  .copy + .copy { page-break-before: always; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #111; padding: 12px; font-size: 11px; }
+  .copy { max-width: 780px; margin: 0 auto; border: 1px solid #111; padding: 10px; position: relative; page-break-inside: avoid; break-inside: avoid-page; }
+  .copy + .copy { margin-top: 10px; }
+  .cut-line { display: flex; align-items: center; gap: 8px; max-width: 780px; margin: 6px auto; color: #888; font-size: 9px; }
+  .cut-line::before, .cut-line::after { content: ""; flex: 1; border-top: 1px dashed #999; }
   .copy-label { font-size: 11px; font-style: italic; color: #444; margin-bottom: 2px; }
   .header-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
   .header-left, .header-right { font-size: 11px; white-space: nowrap; }
@@ -235,6 +237,7 @@ export function printBill(bill: PrintBillData) {
 </head>
 <body>
   ${renderCopy(bill, "Original Copy")}
+  <div class="cut-line">&#9986; cut here</div>
   ${renderCopy(bill, "Duplicate Copy")}
 </body>
 </html>`;

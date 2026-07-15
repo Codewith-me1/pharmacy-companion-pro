@@ -1,13 +1,16 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { getDb } from "../db/client.server";
 import { businessSettings } from "../db/schema";
+import { withTenant } from "../db/tenant.server";
+import { requireUserId } from "../auth/require-user.server";
 
 export const getBusinessSettings = createServerFn({ method: "GET" }).handler(async () => {
-  const db = getDb();
-  const [row] = await db.select().from(businessSettings).limit(1);
-  return row ?? null;
+  const userId = await requireUserId();
+  return withTenant(userId, async (db) => {
+    const [row] = await db.select().from(businessSettings).limit(1);
+    return row ?? null;
+  });
 });
 
 export const saveBusinessSettings = createServerFn({ method: "POST" })
@@ -22,12 +25,14 @@ export const saveBusinessSettings = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    const db = getDb();
-    const [existing] = await db.select().from(businessSettings).limit(1);
-    if (existing) {
-      await db.update(businessSettings).set(data).where(eq(businessSettings.id, existing.id));
-      return { id: existing.id };
-    }
-    const [inserted] = await db.insert(businessSettings).values(data).returning();
-    return { id: inserted.id };
+    const userId = await requireUserId();
+    return withTenant(userId, async (db) => {
+      const [existing] = await db.select().from(businessSettings).limit(1);
+      if (existing) {
+        await db.update(businessSettings).set(data).where(eq(businessSettings.id, existing.id));
+        return { id: existing.id };
+      }
+      const [inserted] = await db.insert(businessSettings).values(data).returning();
+      return { id: inserted.id };
+    });
   });

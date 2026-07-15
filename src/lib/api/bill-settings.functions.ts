@@ -1,8 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { getDb } from "../db/client.server";
 import { billSettings } from "../db/schema";
+import { withTenant } from "../db/tenant.server";
+import { requireUserId } from "../auth/require-user.server";
 
 const customFieldSchema = z.object({ label: z.string(), value: z.string() });
 
@@ -23,32 +24,34 @@ function parseCustomFields(json: string | null) {
 }
 
 export const getBillSettings = createServerFn({ method: "GET" }).handler(async () => {
-  const db = getDb();
-  const [row] = await db.select().from(billSettings).limit(1);
-  if (!row) {
+  const userId = await requireUserId();
+  return withTenant(userId, async (db) => {
+    const [row] = await db.select().from(billSettings).limit(1);
+    if (!row) {
+      return {
+        showDoctor: true,
+        showCustomerAddress: false,
+        showBatchNo: true,
+        showExpiry: true,
+        showMrp: true,
+        showDiscountPercent: true,
+        footerNote: "",
+        termsText: DEFAULT_TERMS,
+        customFields: [] as { label: string; value: string }[],
+      };
+    }
     return {
-      showDoctor: true,
-      showCustomerAddress: false,
-      showBatchNo: true,
-      showExpiry: true,
-      showMrp: true,
-      showDiscountPercent: true,
-      footerNote: "",
-      termsText: DEFAULT_TERMS,
-      customFields: [] as { label: string; value: string }[],
+      showDoctor: row.showDoctor,
+      showCustomerAddress: row.showCustomerAddress,
+      showBatchNo: row.showBatchNo,
+      showExpiry: row.showExpiry,
+      showMrp: row.showMrp,
+      showDiscountPercent: row.showDiscountPercent,
+      footerNote: row.footerNote ?? "",
+      termsText: row.termsText ?? DEFAULT_TERMS,
+      customFields: parseCustomFields(row.customFieldsJson),
     };
-  }
-  return {
-    showDoctor: row.showDoctor,
-    showCustomerAddress: row.showCustomerAddress,
-    showBatchNo: row.showBatchNo,
-    showExpiry: row.showExpiry,
-    showMrp: row.showMrp,
-    showDiscountPercent: row.showDiscountPercent,
-    footerNote: row.footerNote ?? "",
-    termsText: row.termsText ?? DEFAULT_TERMS,
-    customFields: parseCustomFields(row.customFieldsJson),
-  };
+  });
 });
 
 export const saveBillSettings = createServerFn({ method: "POST" })
@@ -66,14 +69,16 @@ export const saveBillSettings = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    const db = getDb();
-    const { customFields, ...rest } = data;
-    const values = { ...rest, customFieldsJson: JSON.stringify(customFields) };
-    const [existing] = await db.select().from(billSettings).limit(1);
-    if (existing) {
-      await db.update(billSettings).set(values).where(eq(billSettings.id, existing.id));
-      return { id: existing.id };
-    }
-    const [inserted] = await db.insert(billSettings).values(values).returning();
-    return { id: inserted.id };
+    const userId = await requireUserId();
+    return withTenant(userId, async (db) => {
+      const { customFields, ...rest } = data;
+      const values = { ...rest, customFieldsJson: JSON.stringify(customFields) };
+      const [existing] = await db.select().from(billSettings).limit(1);
+      if (existing) {
+        await db.update(billSettings).set(values).where(eq(billSettings.id, existing.id));
+        return { id: existing.id };
+      }
+      const [inserted] = await db.insert(billSettings).values(values).returning();
+      return { id: inserted.id };
+    });
   });

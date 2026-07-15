@@ -1,12 +1,15 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { sql, ilike, or, desc } from "drizzle-orm";
-import { getDb } from "../db/client.server";
 import { medicines, batches, suppliers, sales, saleItems, purchases, customers } from "../db/schema";
 import { getServerConfig } from "../config.server";
+import { withTenant } from "../db/tenant.server";
+import { requireUserId } from "../auth/require-user.server";
+import type { getDb } from "../db/client.server";
 
-async function toolExpiringMedicines(days: number) {
-  const db = getDb();
+type Db = ReturnType<typeof getDb>;
+
+async function toolExpiringMedicines(db: Db, days: number) {
   return db
     .select({
       medicineName: medicines.name,
@@ -23,8 +26,7 @@ async function toolExpiringMedicines(days: number) {
     .limit(50);
 }
 
-async function toolLowStockMedicines(threshold: number) {
-  const db = getDb();
+async function toolLowStockMedicines(db: Db, threshold: number) {
   return db
     .select({ medicineName: medicines.name, totalStock: sql<number>`sum(${batches.quantity})::int` })
     .from(batches)
@@ -34,8 +36,7 @@ async function toolLowStockMedicines(threshold: number) {
     .limit(50);
 }
 
-async function toolOutOfStockMedicines() {
-  const db = getDb();
+async function toolOutOfStockMedicines(db: Db) {
   const rows = await db
     .select({ medicineId: medicines.id, medicineName: medicines.name, totalStock: sql<number>`coalesce(sum(${batches.quantity}), 0)::int` })
     .from(medicines)
@@ -44,8 +45,7 @@ async function toolOutOfStockMedicines() {
   return rows.filter((r) => r.totalStock === 0).slice(0, 50);
 }
 
-async function toolSearchMedicines(query: string) {
-  const db = getDb();
+async function toolSearchMedicines(db: Db, query: string) {
   const term = `%${query}%`;
   return db
     .select({
@@ -63,8 +63,7 @@ async function toolSearchMedicines(query: string) {
     .limit(25);
 }
 
-async function toolDashboardSummary() {
-  const db = getDb();
+async function toolDashboardSummary(db: Db) {
   const [todaysSales] = await db
     .select({ total: sql<number>`coalesce(sum(${sales.total}), 0)`, count: sql<number>`count(*)::int` })
     .from(sales)
@@ -99,8 +98,7 @@ async function toolDashboardSummary() {
   };
 }
 
-async function toolTopSelling(days: number) {
-  const db = getDb();
+async function toolTopSelling(db: Db, days: number) {
   return db
     .select({ medicineName: medicines.name, totalQty: sql<number>`sum(${saleItems.quantity})::int` })
     .from(saleItems)
@@ -112,8 +110,7 @@ async function toolTopSelling(days: number) {
     .limit(10);
 }
 
-async function toolSupplierInfo(query: string) {
-  const db = getDb();
+async function toolSupplierInfo(db: Db, query: string) {
   const term = `%${query}%`;
   return db
     .select({
@@ -128,8 +125,7 @@ async function toolSupplierInfo(query: string) {
     .limit(10);
 }
 
-async function toolMedicineDetail(name: string) {
-  const db = getDb();
+async function toolMedicineDetail(db: Db, name: string) {
   const [medicine] = await db
     .select()
     .from(medicines)
@@ -150,8 +146,7 @@ async function toolMedicineDetail(name: string) {
   return { found: true, medicine, batches: medicineBatches };
 }
 
-async function toolPendingCreditCustomers() {
-  const db = getDb();
+async function toolPendingCreditCustomers(db: Db) {
   return db
     .select({ name: customers.name, phone: customers.phone, creditBalance: customers.creditBalance })
     .from(customers)
@@ -257,29 +252,37 @@ const TOOLS = [
   },
 ];
 
-async function runTool(name: string, args: Record<string, unknown>) {
-  switch (name) {
-    case "get_expiring_medicines":
-      return toolExpiringMedicines(typeof args.days === "number" ? args.days : 30);
-    case "get_low_stock_medicines":
-      return toolLowStockMedicines(typeof args.threshold === "number" ? args.threshold : 10);
-    case "get_out_of_stock_medicines":
-      return toolOutOfStockMedicines();
-    case "search_medicines":
-      return toolSearchMedicines(String(args.query ?? ""));
-    case "get_medicine_detail":
-      return toolMedicineDetail(String(args.name ?? ""));
-    case "get_dashboard_summary":
-      return toolDashboardSummary();
-    case "get_top_selling":
-      return toolTopSelling(typeof args.days === "number" ? args.days : 30);
-    case "get_supplier_info":
-      return toolSupplierInfo(String(args.query ?? ""));
-    case "get_pending_credit_customers":
-      return toolPendingCreditCustomers();
-    default:
-      return { error: `Unknown tool ${name}` };
-  }
+// Each tool call gets its own short-lived tenant-scoped transaction rather than sharing one
+// across the whole multi-turn conversation loop below — the loop can make several sequential
+// OpenAI network round-trips (each a few seconds), and holding a single pooled DB connection
+// open for all of them would starve the pool's small connection budget under concurrent chat
+// usage. Opening/closing per tool call keeps each checkout brief, matching how every other
+// server function in this app uses the pool.
+async function runTool(userId: number, name: string, args: Record<string, unknown>) {
+  return withTenant(userId, async (db) => {
+    switch (name) {
+      case "get_expiring_medicines":
+        return toolExpiringMedicines(db, typeof args.days === "number" ? args.days : 30);
+      case "get_low_stock_medicines":
+        return toolLowStockMedicines(db, typeof args.threshold === "number" ? args.threshold : 10);
+      case "get_out_of_stock_medicines":
+        return toolOutOfStockMedicines(db);
+      case "search_medicines":
+        return toolSearchMedicines(db, String(args.query ?? ""));
+      case "get_medicine_detail":
+        return toolMedicineDetail(db, String(args.name ?? ""));
+      case "get_dashboard_summary":
+        return toolDashboardSummary(db);
+      case "get_top_selling":
+        return toolTopSelling(db, typeof args.days === "number" ? args.days : 30);
+      case "get_supplier_info":
+        return toolSupplierInfo(db, String(args.query ?? ""));
+      case "get_pending_credit_customers":
+        return toolPendingCreditCustomers(db);
+      default:
+        return { error: `Unknown tool ${name}` };
+    }
+  });
 }
 
 const chatMessageSchema = z.object({
@@ -290,6 +293,7 @@ const chatMessageSchema = z.object({
 export const chatWithAssistant = createServerFn({ method: "POST" })
   .inputValidator(z.object({ messages: z.array(chatMessageSchema).min(1) }))
   .handler(async ({ data }) => {
+    const userId = await requireUserId();
     const config = getServerConfig();
     if (!config.openaiApiKey) {
       throw new Error("OPENAI_API_KEY is not configured. Add it to your .env file to enable the AI Assistant.");
@@ -341,7 +345,7 @@ export const chatWithAssistant = createServerFn({ method: "POST" })
           } catch {
             args = {};
           }
-          const result = await runTool(toolCall.function.name, args);
+          const result = await runTool(userId, toolCall.function.name, args);
           conversation.push({
             role: "tool",
             tool_call_id: toolCall.id,

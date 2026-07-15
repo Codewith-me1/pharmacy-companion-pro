@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
+import { useMutation } from "@tanstack/react-query";
 import {
   LayoutDashboard,
   ScanLine,
@@ -15,10 +16,21 @@ import {
   Settings,
   Pill,
   Menu,
+  LogOut,
+  UserCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { logout } from "@/lib/api/auth.functions";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const NAV_ITEMS = [
   { to: "/app/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -62,9 +74,21 @@ function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () 
   );
 }
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  children,
+  user,
+}: {
+  children: React.ReactNode;
+  user?: { name: string; email: string; pharmacyName?: string | null } | null;
+}) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const navigate = useNavigate();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  const logoutMutation = useMutation({
+    mutationFn: () => logout(),
+    onSuccess: () => navigate({ to: "/" }),
+  });
 
   return (
     <div className="flex h-screen flex-col bg-background">
@@ -86,9 +110,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
         <span className="hidden text-sm text-muted-foreground sm:inline">Smart Pharmacy OS</span>
         <div className="flex-1" />
-        <span className="text-xs text-muted-foreground">
+        <span className="hidden text-xs text-muted-foreground sm:inline">
           {new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
         </span>
+        {user && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="gap-2">
+                <UserCircle className="h-4 w-4" />
+                <span className="hidden sm:inline">{user.pharmacyName || user.name}</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>
+                <p className="font-medium">{user.name}</p>
+                <p className="text-xs text-muted-foreground">{user.email}</p>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => logoutMutation.mutate()}>
+                <LogOut className="h-4 w-4" /> Log out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </header>
       <div className="flex flex-1 overflow-hidden">
         <nav className="hidden w-56 shrink-0 flex-col gap-1 overflow-y-auto border-r border-border bg-card p-3 md:flex">

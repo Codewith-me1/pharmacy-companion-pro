@@ -1,23 +1,26 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { getDb } from "../db/client.server";
 import { emailSettings } from "../db/schema";
+import { withTenant } from "../db/tenant.server";
+import { requireUserId } from "../auth/require-user.server";
 
 export const getEmailSettings = createServerFn({ method: "GET" }).handler(async () => {
-  const db = getDb();
-  const [row] = await db.select().from(emailSettings).limit(1);
-  if (!row) return null;
-  // Never send the stored password back to the client.
-  return {
-    id: row.id,
-    email: row.email,
-    imapHost: row.imapHost,
-    imapPort: row.imapPort,
-    useTls: row.useTls,
-    enabled: row.enabled,
-    hasPassword: !!row.password,
-  };
+  const userId = await requireUserId();
+  return withTenant(userId, async (db) => {
+    const [row] = await db.select().from(emailSettings).limit(1);
+    if (!row) return null;
+    // Never send the stored password back to the client.
+    return {
+      id: row.id,
+      email: row.email,
+      imapHost: row.imapHost,
+      imapPort: row.imapPort,
+      useTls: row.useTls,
+      enabled: row.enabled,
+      hasPassword: !!row.password,
+    };
+  });
 });
 
 const saveInput = z.object({
@@ -32,22 +35,24 @@ const saveInput = z.object({
 export const saveEmailSettings = createServerFn({ method: "POST" })
   .inputValidator(saveInput)
   .handler(async ({ data }) => {
-    const db = getDb();
-    const [existing] = await db.select().from(emailSettings).limit(1);
-    const values = {
-      email: data.email,
-      imapHost: data.imapHost,
-      imapPort: data.imapPort,
-      useTls: data.useTls,
-      enabled: data.enabled,
-      ...(data.password ? { password: data.password } : {}),
-    };
-    if (existing) {
-      await db.update(emailSettings).set(values).where(eq(emailSettings.id, existing.id));
-      return { id: existing.id };
-    }
-    const [inserted] = await db.insert(emailSettings).values(values).returning();
-    return { id: inserted.id };
+    const userId = await requireUserId();
+    return withTenant(userId, async (db) => {
+      const [existing] = await db.select().from(emailSettings).limit(1);
+      const values = {
+        email: data.email,
+        imapHost: data.imapHost,
+        imapPort: data.imapPort,
+        useTls: data.useTls,
+        enabled: data.enabled,
+        ...(data.password ? { password: data.password } : {}),
+      };
+      if (existing) {
+        await db.update(emailSettings).set(values).where(eq(emailSettings.id, existing.id));
+        return { id: existing.id };
+      }
+      const [inserted] = await db.insert(emailSettings).values(values).returning();
+      return { id: inserted.id };
+    });
   });
 
 export const testEmailConnection = createServerFn({ method: "POST" })
@@ -61,6 +66,7 @@ export const testEmailConnection = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
+    await requireUserId(); // no DB access needed, just gate this to logged-in users
     const { ImapFlow } = await import("imapflow");
     const client = new ImapFlow({
       host: data.imapHost,

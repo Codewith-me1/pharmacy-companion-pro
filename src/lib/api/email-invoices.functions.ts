@@ -2,6 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { buffer as streamToBuffer } from "node:stream/consumers";
 import { getImapClient } from "../imap-client.server";
+import { withTenant } from "../db/tenant.server";
+import { requireUserId } from "../auth/require-user.server";
 
 const ATTACHMENT_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"]);
 
@@ -33,7 +35,11 @@ function findAttachments(node: StructureNode | undefined, results: { part: strin
 export const listSupplierInvoiceEmails = createServerFn({ method: "GET" })
   .inputValidator(z.object({ days: z.number().default(30) }).optional())
   .handler(async ({ data }) => {
-    const client = await getImapClient();
+    const userId = await requireUserId();
+    // Look up IMAP credentials in a brief scoped transaction, then release it before the
+    // potentially slow IMAP session (connect + scan up to 100 emails) — no need to hold a
+    // pooled DB connection for that whole time.
+    const client = await withTenant(userId, (db) => getImapClient(db));
     await client.connect();
     try {
       const lock = await client.getMailboxLock("INBOX");
@@ -77,7 +83,8 @@ export const listSupplierInvoiceEmails = createServerFn({ method: "GET" })
 export const fetchEmailAttachment = createServerFn({ method: "POST" })
   .inputValidator(z.object({ uid: z.number(), part: z.string() }))
   .handler(async ({ data }) => {
-    const client = await getImapClient();
+    const userId = await requireUserId();
+    const client = await withTenant(userId, (db) => getImapClient(db));
     await client.connect();
     try {
       const lock = await client.getMailboxLock("INBOX");

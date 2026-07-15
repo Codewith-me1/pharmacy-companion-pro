@@ -1,9 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { eq, desc, sql, ilike } from "drizzle-orm";
-import { getDb } from "../db/client.server";
 import { purchases, purchaseItems, medicines, batches, suppliers, stockMovements } from "../db/schema";
 import { getServerConfig } from "../config.server";
+import { withTenant } from "../db/tenant.server";
+import { requireUserId } from "../auth/require-user.server";
+import type { getDb } from "../db/client.server";
 
 const extractedItemSchema = z.object({
   medicineName: z.string(),
@@ -106,9 +108,7 @@ function normalizeExpiry(raw: string | null | undefined): string | null {
   return null;
 }
 
-async function buildDraftFromExtraction(extracted: z.infer<typeof extractedInvoiceSchema>) {
-  const db = getDb();
-
+async function buildDraftFromExtraction(db: ReturnType<typeof getDb>, extracted: z.infer<typeof extractedInvoiceSchema>) {
   let matchedSupplier: typeof suppliers.$inferSelect | undefined;
   if (extracted.supplierName) {
     const found = await db
@@ -226,6 +226,7 @@ export const extractInvoice = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
+    const userId = await requireUserId();
     const config = getServerConfig();
     if (!config.openaiApiKey) {
       throw new Error(
@@ -273,7 +274,7 @@ export const extractInvoice = createServerFn({ method: "POST" })
 
     const raw = response.choices[0]?.message?.content ?? "{}";
     const parsed = extractedInvoiceSchema.parse(JSON.parse(raw));
-    const draft = await buildDraftFromExtraction(parsed);
+    const draft = await withTenant(userId, async (db) => buildDraftFromExtraction(db, parsed));
     return { draft, sourceLabel: data.sourceLabel };
   });
 
@@ -325,146 +326,151 @@ export const savePurchase = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    const db = getDb();
+    const userId = await requireUserId();
+    return withTenant(userId, async (db) => {
+      let supplierId = data.supplier.id;
+      if (!supplierId && data.supplier.name) {
+        const inserted = await db
+          .insert(suppliers)
+          .values({
+            name: data.supplier.name,
+            gstNumber: data.supplier.gstNumber,
+            dlNo: data.supplier.dlNo,
+            address: data.supplier.address,
+          })
+          .returning();
+        supplierId = inserted[0].id;
+      } else if (supplierId && data.supplier.dlNo) {
+        const [existingSupplier] = await db.select().from(suppliers).where(eq(suppliers.id, supplierId));
+        if (existingSupplier && !existingSupplier.dlNo) {
+          await db.update(suppliers).set({ dlNo: data.supplier.dlNo }).where(eq(suppliers.id, supplierId));
+        }
+      }
 
-    let supplierId = data.supplier.id;
-    if (!supplierId && data.supplier.name) {
-      const inserted = await db
-        .insert(suppliers)
+      const [purchase] = await db
+        .insert(purchases)
         .values({
-          name: data.supplier.name,
-          gstNumber: data.supplier.gstNumber,
-          dlNo: data.supplier.dlNo,
-          address: data.supplier.address,
+          supplierId,
+          invoiceNumber: data.invoiceNumber,
+          serialNumber: data.serialNumber,
+          invoiceDate: data.invoiceDate,
+          billNumber: data.billNumber,
+          invoiceTotal: data.invoiceTotal ?? 0,
+          netAmount: data.netAmount ?? 0,
+          taxAmount: data.taxAmount ?? 0,
+          status: "verified",
+          ocrConfidence: data.overallConfidence,
+          sourceLabel: data.sourceLabel,
         })
         .returning();
-      supplierId = inserted[0].id;
-    } else if (supplierId && data.supplier.dlNo) {
-      const [existingSupplier] = await db.select().from(suppliers).where(eq(suppliers.id, supplierId));
-      if (existingSupplier && !existingSupplier.dlNo) {
-        await db.update(suppliers).set({ dlNo: data.supplier.dlNo }).where(eq(suppliers.id, supplierId));
-      }
-    }
 
-    const [purchase] = await db
-      .insert(purchases)
-      .values({
-        supplierId,
-        invoiceNumber: data.invoiceNumber,
-        serialNumber: data.serialNumber,
-        invoiceDate: data.invoiceDate,
-        billNumber: data.billNumber,
-        invoiceTotal: data.invoiceTotal ?? 0,
-        netAmount: data.netAmount ?? 0,
-        taxAmount: data.taxAmount ?? 0,
-        status: "verified",
-        ocrConfidence: data.overallConfidence,
-        sourceLabel: data.sourceLabel,
-      })
-      .returning();
+      for (const item of data.items) {
+        let medicineId = item.medicineId;
+        if (!medicineId) {
+          const inserted = await db
+            .insert(medicines)
+            .values({
+              name: item.medicineNameRaw,
+              pack: item.pack ?? undefined,
+              mrp: item.mrp,
+              sellingPrice: item.sellingPrice ?? item.mrp,
+              purchasePrice: item.purchasePrice,
+              gstPercent: item.gstPercent,
+              hsnCode: item.hsnCode ?? undefined,
+            })
+            .returning();
+          medicineId = inserted[0].id;
+        }
 
-    for (const item of data.items) {
-      let medicineId = item.medicineId;
-      if (!medicineId) {
-        const inserted = await db
-          .insert(medicines)
-          .values({
-            name: item.medicineNameRaw,
-            pack: item.pack ?? undefined,
-            mrp: item.mrp,
-            sellingPrice: item.sellingPrice ?? item.mrp,
-            purchasePrice: item.purchasePrice,
-            gstPercent: item.gstPercent,
-            hsnCode: item.hsnCode ?? undefined,
-          })
-          .returning();
-        medicineId = inserted[0].id;
-      }
-
-      await db.insert(purchaseItems).values({
-        purchaseId: purchase.id,
-        medicineId,
-        medicineNameRaw: item.medicineNameRaw,
-        pack: item.pack,
-        batchNo: item.batchNo,
-        expiryDate: item.expiryDate,
-        manufactureDate: item.manufactureDate,
-        hsnCode: item.hsnCode,
-        mrp: item.mrp,
-        ptr: item.ptr,
-        pts: item.pts,
-        purchasePrice: item.purchasePrice,
-        sellingPrice: item.sellingPrice,
-        gstPercent: item.gstPercent,
-        cgst: item.cgst,
-        sgst: item.sgst,
-        igst: item.igst,
-        discount: item.discount,
-        scheme: item.scheme,
-        freeQty: item.freeQty,
-        quantity: item.quantity,
-        confidence: item.confidence,
-        flags: JSON.stringify(item.flags ?? []),
-      });
-
-      if (item.batchNo && item.expiryDate) {
-        const [batch] = await db
-          .insert(batches)
-          .values({
-            medicineId,
-            batchNo: item.batchNo,
-            expiryDate: item.expiryDate,
-            manufactureDate: item.manufactureDate ?? undefined,
-            quantity: item.quantity + (item.freeQty ?? 0),
-            purchasePrice: item.purchasePrice,
-            mrp: item.mrp,
-            ptr: item.ptr ?? 0,
-            pts: item.pts ?? 0,
-            supplierId,
-            purchaseId: purchase.id,
-          })
-          .returning();
-
-        await db.insert(stockMovements).values({
+        await db.insert(purchaseItems).values({
+          purchaseId: purchase.id,
           medicineId,
-          batchId: batch.id,
-          type: "in",
-          quantity: item.quantity + (item.freeQty ?? 0),
-          reason: "Purchase entry",
-          referenceType: "purchase",
-          referenceId: purchase.id,
+          medicineNameRaw: item.medicineNameRaw,
+          pack: item.pack,
+          batchNo: item.batchNo,
+          expiryDate: item.expiryDate,
+          manufactureDate: item.manufactureDate,
+          hsnCode: item.hsnCode,
+          mrp: item.mrp,
+          ptr: item.ptr,
+          pts: item.pts,
+          purchasePrice: item.purchasePrice,
+          sellingPrice: item.sellingPrice,
+          gstPercent: item.gstPercent,
+          cgst: item.cgst,
+          sgst: item.sgst,
+          igst: item.igst,
+          discount: item.discount,
+          scheme: item.scheme,
+          freeQty: item.freeQty,
+          quantity: item.quantity,
+          confidence: item.confidence,
+          flags: JSON.stringify(item.flags ?? []),
         });
-      }
-    }
 
-    return { purchaseId: purchase.id };
+        if (item.batchNo && item.expiryDate) {
+          const [batch] = await db
+            .insert(batches)
+            .values({
+              medicineId,
+              batchNo: item.batchNo,
+              expiryDate: item.expiryDate,
+              manufactureDate: item.manufactureDate ?? undefined,
+              quantity: item.quantity + (item.freeQty ?? 0),
+              purchasePrice: item.purchasePrice,
+              mrp: item.mrp,
+              ptr: item.ptr ?? 0,
+              pts: item.pts ?? 0,
+              supplierId,
+              purchaseId: purchase.id,
+            })
+            .returning();
+
+          await db.insert(stockMovements).values({
+            medicineId,
+            batchId: batch.id,
+            type: "in",
+            quantity: item.quantity + (item.freeQty ?? 0),
+            reason: "Purchase entry",
+            referenceType: "purchase",
+            referenceId: purchase.id,
+          });
+        }
+      }
+
+      return { purchaseId: purchase.id };
+    });
   });
 
 export const listPurchases = createServerFn({ method: "GET" }).handler(async () => {
-  const db = getDb();
-  const rows = await db
-    .select({
-      id: purchases.id,
-      invoiceNumber: purchases.invoiceNumber,
-      invoiceDate: purchases.invoiceDate,
-      billNumber: purchases.billNumber,
-      invoiceTotal: purchases.invoiceTotal,
-      status: purchases.status,
-      ocrConfidence: purchases.ocrConfidence,
-      createdAt: purchases.createdAt,
-      supplierName: suppliers.name,
-    })
-    .from(purchases)
-    .leftJoin(suppliers, eq(purchases.supplierId, suppliers.id))
-    .orderBy(desc(purchases.createdAt));
-  return rows;
+  const userId = await requireUserId();
+  return withTenant(userId, async (db) => {
+    const rows = await db
+      .select({
+        id: purchases.id,
+        invoiceNumber: purchases.invoiceNumber,
+        invoiceDate: purchases.invoiceDate,
+        billNumber: purchases.billNumber,
+        invoiceTotal: purchases.invoiceTotal,
+        status: purchases.status,
+        ocrConfidence: purchases.ocrConfidence,
+        createdAt: purchases.createdAt,
+        supplierName: suppliers.name,
+      })
+      .from(purchases)
+      .leftJoin(suppliers, eq(purchases.supplierId, suppliers.id))
+      .orderBy(desc(purchases.createdAt));
+    return rows;
+  });
 });
 
 export const getPurchase = createServerFn({ method: "GET" })
   .inputValidator(z.object({ id: z.number() }))
   .handler(async ({ data }) => {
-    const db = getDb();
-    const [purchase] = await db.select().from(purchases).where(eq(purchases.id, data.id));
-    const items = await db.select().from(purchaseItems).where(eq(purchaseItems.purchaseId, data.id));
-    return { purchase, items: items.map((i) => ({ ...i, flags: JSON.parse(i.flags ?? "[]") })) };
+    const userId = await requireUserId();
+    return withTenant(userId, async (db) => {
+      const [purchase] = await db.select().from(purchases).where(eq(purchases.id, data.id));
+      const items = await db.select().from(purchaseItems).where(eq(purchaseItems.purchaseId, data.id));
+      return { purchase, items: items.map((i) => ({ ...i, flags: JSON.parse(i.flags ?? "[]") })) };
+    });
   });

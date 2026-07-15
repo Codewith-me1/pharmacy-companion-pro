@@ -1,25 +1,28 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { eq, asc, desc } from "drizzle-orm";
-import { getDb } from "../db/client.server";
 import { customers, sales } from "../db/schema";
+import { withTenant } from "../db/tenant.server";
+import { requireUserId } from "../auth/require-user.server";
 
 export const listCustomers = createServerFn({ method: "GET" }).handler(async () => {
-  const db = getDb();
-  return db.select().from(customers).orderBy(asc(customers.name));
+  const userId = await requireUserId();
+  return withTenant(userId, async (db) => db.select().from(customers).orderBy(asc(customers.name)));
 });
 
 export const getCustomer = createServerFn({ method: "GET" })
   .inputValidator(z.object({ id: z.number() }))
   .handler(async ({ data }) => {
-    const db = getDb();
-    const [customer] = await db.select().from(customers).where(eq(customers.id, data.id));
-    const purchaseHistory = await db
-      .select()
-      .from(sales)
-      .where(eq(sales.customerId, data.id))
-      .orderBy(desc(sales.createdAt));
-    return { customer, purchaseHistory };
+    const userId = await requireUserId();
+    return withTenant(userId, async (db) => {
+      const [customer] = await db.select().from(customers).where(eq(customers.id, data.id));
+      const purchaseHistory = await db
+        .select()
+        .from(sales)
+        .where(eq(sales.customerId, data.id))
+        .orderBy(desc(sales.createdAt));
+      return { customer, purchaseHistory };
+    });
   });
 
 export const upsertCustomer = createServerFn({ method: "POST" })
@@ -35,19 +38,23 @@ export const upsertCustomer = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    const db = getDb();
-    if (data.id) {
-      await db.update(customers).set(data).where(eq(customers.id, data.id));
-      return { id: data.id };
-    }
-    const [inserted] = await db.insert(customers).values(data).returning();
-    return { id: inserted.id };
+    const userId = await requireUserId();
+    return withTenant(userId, async (db) => {
+      if (data.id) {
+        await db.update(customers).set(data).where(eq(customers.id, data.id));
+        return { id: data.id };
+      }
+      const [inserted] = await db.insert(customers).values(data).returning();
+      return { id: inserted.id };
+    });
   });
 
 export const deleteCustomer = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.number() }))
   .handler(async ({ data }) => {
-    const db = getDb();
-    await db.delete(customers).where(eq(customers.id, data.id));
-    return { ok: true };
+    const userId = await requireUserId();
+    return withTenant(userId, async (db) => {
+      await db.delete(customers).where(eq(customers.id, data.id));
+      return { ok: true };
+    });
   });

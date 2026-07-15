@@ -8,9 +8,14 @@ let pool: Pool | undefined;
 
 function getPool() {
   if (!pool) {
-    const connectionString = process.env.DATABASE_URL;
+    // APP_DATABASE_URL connects as a restricted role with no BYPASSRLS — required for the
+    // per-tenant Row-Level Security policies (see tenant.server.ts) to actually be enforced.
+    // DATABASE_URL (the admin/migration role) is used only as a fallback for environments that
+    // haven't provisioned the restricted role — RLS silently no-ops for that role, so it must
+    // never be relied on for real multi-tenant deployments.
+    const connectionString = process.env.APP_DATABASE_URL || process.env.DATABASE_URL;
     if (!connectionString) {
-      throw new Error("DATABASE_URL is not set. Add it to your .env file (see .env.example).");
+      throw new Error("APP_DATABASE_URL (or DATABASE_URL) is not set. Add it to your .env file (see .env.example).");
     }
     // Managed Postgres providers (Aiven, Supabase, Neon, RDS, etc.) require TLS and reject
     // plaintext connections outright. Local Docker/native Postgres has no TLS configured at

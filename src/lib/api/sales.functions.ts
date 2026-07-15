@@ -1,11 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { eq, desc, sql, and, or, ilike } from "drizzle-orm";
-import { getDb } from "../db/client.server";
 import { sales, saleItems, batches, medicines, customers, doctors, stockMovements } from "../db/schema";
+import { withTenant } from "../db/tenant.server";
+import { requireUserId } from "../auth/require-user.server";
+import type { getDb } from "../db/client.server";
 
-async function nextBillNumber(prefix: string) {
-  const db = getDb();
+async function nextBillNumber(db: ReturnType<typeof getDb>, prefix: string) {
   const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(sales);
   return `${prefix}-${String(count + 1).padStart(5, "0")}`;
 }
@@ -32,68 +33,69 @@ export const createSale = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    const db = getDb();
-
-    for (const item of data.items) {
-      const [batch] = await db.select().from(batches).where(eq(batches.id, item.batchId));
-      if (!batch || batch.quantity < item.quantity) {
-        throw new Error(`Insufficient stock for batch ${batch?.batchNo ?? item.batchId}`);
-      }
-    }
-
-    const subtotal = data.items.reduce((sum, i) => sum + i.salePrice * i.quantity, 0);
-    const gstAmount = data.items.reduce((sum, i) => sum + (i.salePrice * i.quantity * i.gstPercent) / 100, 0);
-    const total = subtotal + gstAmount - data.discount;
-    const isEstimateOrQuote = data.billType === "estimate" || data.billType === "quotation";
-    const paymentStatus = data.billType === "credit" ? "pending" : "paid";
-
-    const billNumber = await nextBillNumber(data.billType === "gst" ? "GST" : "BILL");
-
-    const [sale] = await db
-      .insert(sales)
-      .values({
-        customerId: data.customerId ?? null,
-        doctorId: data.doctorId ?? null,
-        billNumber,
-        billType: data.billType,
-        subtotal,
-        discount: data.discount,
-        gstAmount,
-        total,
-        paymentMode: data.paymentMode,
-        paymentStatus,
-      })
-      .returning();
-
-    for (const item of data.items) {
-      await db.insert(saleItems).values({ saleId: sale.id, ...item });
-
-      if (!isEstimateOrQuote) {
+    const userId = await requireUserId();
+    return withTenant(userId, async (db) => {
+      for (const item of data.items) {
         const [batch] = await db.select().from(batches).where(eq(batches.id, item.batchId));
-        await db.update(batches).set({ quantity: batch.quantity - item.quantity }).where(eq(batches.id, item.batchId));
-        await db.insert(stockMovements).values({
-          medicineId: item.medicineId,
-          batchId: item.batchId,
-          type: "out",
-          quantity: item.quantity,
-          reason: "Sale",
-          referenceType: "sale",
-          referenceId: sale.id,
-        });
+        if (!batch || batch.quantity < item.quantity) {
+          throw new Error(`Insufficient stock for batch ${batch?.batchNo ?? item.batchId}`);
+        }
       }
-    }
 
-    if (data.billType === "credit" && data.customerId) {
-      const [customer] = await db.select().from(customers).where(eq(customers.id, data.customerId));
-      if (customer) {
-        await db
-          .update(customers)
-          .set({ creditBalance: customer.creditBalance + total })
-          .where(eq(customers.id, data.customerId));
+      const subtotal = data.items.reduce((sum, i) => sum + i.salePrice * i.quantity, 0);
+      const gstAmount = data.items.reduce((sum, i) => sum + (i.salePrice * i.quantity * i.gstPercent) / 100, 0);
+      const total = subtotal + gstAmount - data.discount;
+      const isEstimateOrQuote = data.billType === "estimate" || data.billType === "quotation";
+      const paymentStatus = data.billType === "credit" ? "pending" : "paid";
+
+      const billNumber = await nextBillNumber(db, data.billType === "gst" ? "GST" : "BILL");
+
+      const [sale] = await db
+        .insert(sales)
+        .values({
+          customerId: data.customerId ?? null,
+          doctorId: data.doctorId ?? null,
+          billNumber,
+          billType: data.billType,
+          subtotal,
+          discount: data.discount,
+          gstAmount,
+          total,
+          paymentMode: data.paymentMode,
+          paymentStatus,
+        })
+        .returning();
+
+      for (const item of data.items) {
+        await db.insert(saleItems).values({ saleId: sale.id, ...item });
+
+        if (!isEstimateOrQuote) {
+          const [batch] = await db.select().from(batches).where(eq(batches.id, item.batchId));
+          await db.update(batches).set({ quantity: batch.quantity - item.quantity }).where(eq(batches.id, item.batchId));
+          await db.insert(stockMovements).values({
+            medicineId: item.medicineId,
+            batchId: item.batchId,
+            type: "out",
+            quantity: item.quantity,
+            reason: "Sale",
+            referenceType: "sale",
+            referenceId: sale.id,
+          });
+        }
       }
-    }
 
-    return { saleId: sale.id, billNumber, total };
+      if (data.billType === "credit" && data.customerId) {
+        const [customer] = await db.select().from(customers).where(eq(customers.id, data.customerId));
+        if (customer) {
+          await db
+            .update(customers)
+            .set({ creditBalance: customer.creditBalance + total })
+            .where(eq(customers.id, data.customerId));
+        }
+      }
+
+      return { saleId: sale.id, billNumber, total };
+    });
   });
 
 export const listSales = createServerFn({ method: "GET" })
@@ -109,85 +111,91 @@ export const listSales = createServerFn({ method: "GET" })
       .optional(),
   )
   .handler(async ({ data }) => {
-    const db = getDb();
-    const search = data?.search?.trim();
-    const conditions = [
-      search
-        ? or(ilike(sales.billNumber, `%${search}%`), ilike(customers.name, `%${search}%`))
-        : undefined,
-      data?.dateFrom ? sql`${sales.createdAt}::date >= ${data.dateFrom}::date` : undefined,
-      data?.dateTo ? sql`${sales.createdAt}::date <= ${data.dateTo}::date` : undefined,
-      data?.year ? sql`extract(year from ${sales.createdAt}::date) = ${data.year}` : undefined,
-    ].filter(Boolean);
+    const userId = await requireUserId();
+    return withTenant(userId, async (db) => {
+      const search = data?.search?.trim();
+      const conditions = [
+        search
+          ? or(ilike(sales.billNumber, `%${search}%`), ilike(customers.name, `%${search}%`))
+          : undefined,
+        data?.dateFrom ? sql`${sales.createdAt}::date >= ${data.dateFrom}::date` : undefined,
+        data?.dateTo ? sql`${sales.createdAt}::date <= ${data.dateTo}::date` : undefined,
+        data?.year ? sql`extract(year from ${sales.createdAt}::date) = ${data.year}` : undefined,
+      ].filter(Boolean);
 
-    return db
-      .select({
-        id: sales.id,
-        billNumber: sales.billNumber,
-        billType: sales.billType,
-        total: sales.total,
-        paymentMode: sales.paymentMode,
-        paymentStatus: sales.paymentStatus,
-        createdAt: sales.createdAt,
-        customerName: customers.name,
-      })
-      .from(sales)
-      .leftJoin(customers, eq(customers.id, sales.customerId))
-      .where(conditions.length ? and(...conditions) : undefined)
-      .orderBy(desc(sales.createdAt))
-      .limit(data?.limit ?? 100);
+      return db
+        .select({
+          id: sales.id,
+          billNumber: sales.billNumber,
+          billType: sales.billType,
+          total: sales.total,
+          paymentMode: sales.paymentMode,
+          paymentStatus: sales.paymentStatus,
+          createdAt: sales.createdAt,
+          customerName: customers.name,
+        })
+        .from(sales)
+        .leftJoin(customers, eq(customers.id, sales.customerId))
+        .where(conditions.length ? and(...conditions) : undefined)
+        .orderBy(desc(sales.createdAt))
+        .limit(data?.limit ?? 100);
+    });
   });
 
 export const listSaleYears = createServerFn({ method: "GET" }).handler(async () => {
-  const db = getDb();
-  const rows = await db
-    .select({ year: sql<number>`extract(year from ${sales.createdAt}::date)::int` })
-    .from(sales)
-    .groupBy(sql`extract(year from ${sales.createdAt}::date)`)
-    .orderBy(sql`extract(year from ${sales.createdAt}::date) desc`);
-  return rows.map((r) => r.year);
+  const userId = await requireUserId();
+  return withTenant(userId, async (db) => {
+    const rows = await db
+      .select({ year: sql<number>`extract(year from ${sales.createdAt}::date)::int` })
+      .from(sales)
+      .groupBy(sql`extract(year from ${sales.createdAt}::date)`)
+      .orderBy(sql`extract(year from ${sales.createdAt}::date) desc`);
+    return rows.map((r) => r.year);
+  });
 });
 
 export const getSale = createServerFn({ method: "GET" })
   .inputValidator(z.object({ id: z.number() }))
   .handler(async ({ data }) => {
-    const db = getDb();
-    const [sale] = await db
-      .select({
-        id: sales.id,
-        billNumber: sales.billNumber,
-        billType: sales.billType,
-        subtotal: sales.subtotal,
-        discount: sales.discount,
-        gstAmount: sales.gstAmount,
-        total: sales.total,
-        paymentMode: sales.paymentMode,
-        paymentStatus: sales.paymentStatus,
-        createdAt: sales.createdAt,
-        customerName: customers.name,
-        customerAddress: customers.address,
-        doctorName: doctors.name,
-      })
-      .from(sales)
-      .leftJoin(customers, eq(customers.id, sales.customerId))
-      .leftJoin(doctors, eq(doctors.id, sales.doctorId))
-      .where(eq(sales.id, data.id));
-    const items = await db
-      .select({
-        id: saleItems.id,
-        quantity: saleItems.quantity,
-        mrp: saleItems.mrp,
-        salePrice: saleItems.salePrice,
-        gstPercent: saleItems.gstPercent,
-        discount: saleItems.discount,
-        medicineName: medicines.name,
-        pack: medicines.pack,
-        batchNo: batches.batchNo,
-        expiryDate: batches.expiryDate,
-      })
-      .from(saleItems)
-      .innerJoin(medicines, eq(medicines.id, saleItems.medicineId))
-      .innerJoin(batches, eq(batches.id, saleItems.batchId))
-      .where(eq(saleItems.saleId, data.id));
-    return { sale, items };
+    const userId = await requireUserId();
+    return withTenant(userId, async (db) => {
+      const [sale] = await db
+        .select({
+          id: sales.id,
+          billNumber: sales.billNumber,
+          billType: sales.billType,
+          subtotal: sales.subtotal,
+          discount: sales.discount,
+          gstAmount: sales.gstAmount,
+          total: sales.total,
+          paymentMode: sales.paymentMode,
+          paymentStatus: sales.paymentStatus,
+          createdAt: sales.createdAt,
+          customerName: customers.name,
+          customerAddress: customers.address,
+          doctorName: doctors.name,
+        })
+        .from(sales)
+        .leftJoin(customers, eq(customers.id, sales.customerId))
+        .leftJoin(doctors, eq(doctors.id, sales.doctorId))
+        .where(eq(sales.id, data.id));
+      const items = await db
+        .select({
+          id: saleItems.id,
+          quantity: saleItems.quantity,
+          mrp: saleItems.mrp,
+          salePrice: saleItems.salePrice,
+          gstPercent: saleItems.gstPercent,
+          discount: saleItems.discount,
+          medicineName: medicines.name,
+          pack: medicines.pack,
+          batchNo: batches.batchNo,
+          expiryDate: batches.expiryDate,
+        })
+        .from(saleItems)
+        .innerJoin(medicines, eq(medicines.id, saleItems.medicineId))
+        .innerJoin(batches, eq(batches.id, saleItems.batchId))
+        .where(eq(saleItems.saleId, data.id));
+      return { sale, items };
+    });
   });

@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { pgTable, text, integer, doublePrecision, boolean, serial } from "drizzle-orm/pg-core";
 
 const id = () => serial("id").primaryKey();
@@ -6,8 +7,34 @@ const createdAt = () =>
     .notNull()
     .$defaultFn(() => new Date().toISOString());
 
+// Matches the Postgres-level DEFAULT set in drizzle/0004_breezy_slyde.sql — every tenant table's
+// owner_id fills in automatically from the per-request session variable set by withTenant(), so
+// application code never has to pass ownerId explicitly on insert. Declaring the same default
+// here (rather than only at the DB level) makes Drizzle's inferred insert types treat ownerId as
+// optional, matching what actually happens at runtime.
+const ownerId = () =>
+  integer("owner_id")
+    .notNull()
+    .default(sql`(nullif(current_setting('app.current_user_id', true), ''))::integer`)
+    .references(() => users.id);
+
+export const users = pgTable("users", {
+  id: id(),
+  email: text("email").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  name: text("name").notNull(),
+  pharmacyName: text("pharmacy_name"),
+  createdAt: createdAt(),
+});
+
+// Every table below is tenant-scoped: ownerId is nullable only until migration B backfills
+// existing rows and switches it to NOT NULL + Postgres Row-Level Security (see
+// drizzle/0004_*.sql). Do not rely on ownerId being enforced in application code — the
+// database itself refuses cross-tenant reads/writes once RLS is enabled.
+
 export const suppliers = pgTable("suppliers", {
   id: id(),
+  ownerId: ownerId(),
   name: text("name").notNull(),
   gstNumber: text("gst_number"),
   dlNo: text("dl_no"),
@@ -20,6 +47,7 @@ export const suppliers = pgTable("suppliers", {
 
 export const medicines = pgTable("medicines", {
   id: id(),
+  ownerId: ownerId(),
   name: text("name").notNull(),
   brand: text("brand"),
   company: text("company"),
@@ -37,6 +65,7 @@ export const medicines = pgTable("medicines", {
 
 export const batches = pgTable("batches", {
   id: id(),
+  ownerId: ownerId(),
   medicineId: integer("medicine_id")
     .notNull()
     .references(() => medicines.id),
@@ -56,6 +85,7 @@ export const batches = pgTable("batches", {
 
 export const purchases = pgTable("purchases", {
   id: id(),
+  ownerId: ownerId(),
   supplierId: integer("supplier_id").references(() => suppliers.id),
   invoiceNumber: text("invoice_number"),
   serialNumber: text("serial_number"),
@@ -73,6 +103,7 @@ export const purchases = pgTable("purchases", {
 
 export const purchaseItems = pgTable("purchase_items", {
   id: id(),
+  ownerId: ownerId(),
   purchaseId: integer("purchase_id")
     .notNull()
     .references(() => purchases.id),
@@ -103,6 +134,7 @@ export const purchaseItems = pgTable("purchase_items", {
 
 export const doctors = pgTable("doctors", {
   id: id(),
+  ownerId: ownerId(),
   name: text("name").notNull(),
   hospital: text("hospital"),
   clinic: text("clinic"),
@@ -114,6 +146,7 @@ export const doctors = pgTable("doctors", {
 
 export const doctorMedicines = pgTable("doctor_medicines", {
   id: id(),
+  ownerId: ownerId(),
   doctorId: integer("doctor_id")
     .notNull()
     .references(() => doctors.id),
@@ -126,6 +159,7 @@ export const doctorMedicines = pgTable("doctor_medicines", {
 
 export const customers = pgTable("customers", {
   id: id(),
+  ownerId: ownerId(),
   name: text("name").notNull(),
   phone: text("phone"),
   address: text("address"),
@@ -137,6 +171,7 @@ export const customers = pgTable("customers", {
 
 export const sales = pgTable("sales", {
   id: id(),
+  ownerId: ownerId(),
   customerId: integer("customer_id").references(() => customers.id),
   doctorId: integer("doctor_id").references(() => doctors.id),
   billNumber: text("bill_number").notNull(),
@@ -152,6 +187,7 @@ export const sales = pgTable("sales", {
 
 export const saleItems = pgTable("sale_items", {
   id: id(),
+  ownerId: ownerId(),
   saleId: integer("sale_id")
     .notNull()
     .references(() => sales.id),
@@ -170,6 +206,7 @@ export const saleItems = pgTable("sale_items", {
 
 export const businessSettings = pgTable("business_settings", {
   id: id(),
+  ownerId: ownerId(),
   firmName: text("firm_name"),
   dlNo: text("dl_no"),
   gstNumber: text("gst_number"),
@@ -180,6 +217,7 @@ export const businessSettings = pgTable("business_settings", {
 
 export const billSettings = pgTable("bill_settings", {
   id: id(),
+  ownerId: ownerId(),
   showDoctor: boolean("show_doctor").notNull().default(true),
   showCustomerAddress: boolean("show_customer_address").notNull().default(false),
   showBatchNo: boolean("show_batch_no").notNull().default(true),
@@ -193,6 +231,7 @@ export const billSettings = pgTable("bill_settings", {
 
 export const emailSettings = pgTable("email_settings", {
   id: id(),
+  ownerId: ownerId(),
   email: text("email"),
   imapHost: text("imap_host"),
   imapPort: integer("imap_port").notNull().default(993),
@@ -203,6 +242,7 @@ export const emailSettings = pgTable("email_settings", {
 
 export const stockMovements = pgTable("stock_movements", {
   id: id(),
+  ownerId: ownerId(),
   medicineId: integer("medicine_id")
     .notNull()
     .references(() => medicines.id),
