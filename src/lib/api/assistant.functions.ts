@@ -311,13 +311,22 @@ export const chatWithAssistant = createServerFn({ method: "POST" })
     }> = [
       {
         role: "system",
+        // Smaller models (gpt-4o-mini) follow tool-routing instructions far more reliably when
+        // they're explicit and example-driven rather than general — this is written specifically
+        // to compensate for using the cheap model instead of full gpt-4o, not as generic advice.
         content: [
           "You are MediOS's AI Assistant, built into a pharmacy management dashboard.",
           `Today's date is ${today}.`,
-          "You have live read access to the pharmacy's real database via tools — always call the right tool to look up real numbers before answering questions about stock, expiry, sales, profit, suppliers, or customers. Never guess or make up numbers.",
-          "Answer concisely, in plain language a pharmacist would use. Use rupee amounts formatted like ₹1,234. When listing multiple items, use a short bullet list.",
-          "If a tool returns an empty result, say so plainly (e.g. 'Nothing is expiring in the next 30 days.') rather than inventing data.",
-        ].join(" "),
+          "",
+          "HARD RULES:",
+          "1. Never state a number, name, date, or fact about the pharmacy's stock, expiry, sales, profit, suppliers, or customers unless it came from a tool result in this conversation. If you have not called a tool yet for the current question, call one before answering.",
+          "2. Match the question to a tool literally, don't guess a related one: expiry -> get_expiring_medicines, low stock -> get_low_stock_medicines, zero stock -> get_out_of_stock_medicines, 'is X available'/'do we have X' -> search_medicines or get_medicine_detail, sales/profit/revenue summary -> get_dashboard_summary, best-sellers -> get_top_selling, supplier contact/dues -> get_supplier_info, who owes money -> get_pending_credit_customers.",
+          "3. If a question needs two tools (e.g. 'is X available and who do we usually buy it from'), call both before writing your final answer — don't answer half the question from a tool and guess the rest.",
+          "4. If a tool result is an empty array or all-zero, say so plainly (e.g. 'Nothing is expiring in the next 30 days.'). Do not soften this into a vague non-answer, and do not invent an example to fill the gap.",
+          "5. If the user's question is ambiguous about a time window (e.g. 'low on stock' with no threshold), use the tool's stated default rather than asking a clarifying question first.",
+          "",
+          "STYLE: Be concise, in plain language a pharmacist would use. Format rupee amounts like ₹1,234. Use a short bullet list when returning more than 2 items; use a single sentence for a single fact.",
+        ].join("\n"),
       },
       ...data.messages.map((m) => ({ role: m.role, content: m.content })),
     ];
@@ -327,7 +336,10 @@ export const chatWithAssistant = createServerFn({ method: "POST" })
     for (let iteration = 0; iteration < 5; iteration++) {
       const response = await client.chat.completions.create({
         model: process.env.OPENAI_CHAT_MODEL || "gpt-4o-mini",
-        temperature: 0.3,
+        // Low temperature favors literal tool-routing and grounded phrasing over creative
+        // wording — for a data-lookup assistant, consistency matters more than variety, and it's
+        // the single cheapest lever to claw back accuracy lost by not using full gpt-4o.
+        temperature: 0.1,
         messages: conversation as never,
         tools: TOOLS,
       });
@@ -339,11 +351,20 @@ export const chatWithAssistant = createServerFn({ method: "POST" })
         conversation.push({ role: "assistant", content: message.content ?? "", tool_calls: message.tool_calls });
         for (const toolCall of message.tool_calls) {
           if (toolCall.type !== "function") continue;
-          let args: Record<string, unknown> = {};
+          let args: Record<string, unknown>;
           try {
             args = JSON.parse(toolCall.function.arguments || "{}");
           } catch {
-            args = {};
+            // Feed the parse failure back as a tool result instead of silently substituting {}
+            // — mini models occasionally emit slightly malformed JSON, and telling them so lets
+            // them retry with corrected arguments instead of the query running with defaults
+            // that silently don't match what the user actually asked.
+            conversation.push({
+              role: "tool",
+              tool_call_id: toolCall.id,
+              content: JSON.stringify({ error: "Your last tool call had invalid JSON arguments. Call the tool again with valid JSON." }),
+            });
+            continue;
           }
           const result = await runTool(userId, toolCall.function.name, args);
           conversation.push({

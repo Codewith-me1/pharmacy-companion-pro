@@ -47,7 +47,7 @@ function Dashboard() {
         <GlobalSearch />
       </div>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
         <StatCard
           label="Today's Sales"
           value={formatInr(data.todaysSales.total)}
@@ -80,16 +80,16 @@ function Dashboard() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+        <Card className="min-w-0 lg:col-span-2">
           <CardHeader>
             <CardTitle className="text-sm">Monthly Sales vs Purchases</CardTitle>
           </CardHeader>
-          <CardContent className="h-64">
+          <CardContent className="h-56 sm:h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={mergeMonthly(data.monthlySales, data.monthlyPurchases)}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis dataKey="month" fontSize={12} />
-                <YAxis fontSize={12} />
+                <YAxis fontSize={12} width={40} />
                 <Tooltip formatter={(v: number) => formatInr(v)} />
                 <Bar dataKey="sales" fill="var(--color-primary)" radius={4} />
                 <Bar dataKey="purchases" fill="var(--color-muted-foreground)" radius={4} />
@@ -98,13 +98,13 @@ function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-sm">
               <Trophy className="h-4 w-4" /> Top Selling (30 days)
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="overflow-x-auto p-0 sm:p-6 sm:pt-0">
             <Table>
               <TableHeader>
                 <TableRow>

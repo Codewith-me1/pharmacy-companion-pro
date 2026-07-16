@@ -54,7 +54,7 @@ export function AiChatbot() {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105"
+        className="fixed bottom-4 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105 sm:bottom-6 sm:right-6"
         title="Ask the AI Assistant"
       >
         <Bot className="h-6 w-6" />
@@ -63,7 +63,7 @@ export function AiChatbot() {
   }
 
   return (
-    <Card className="fixed bottom-6 right-6 z-40 flex h-[520px] w-96 flex-col overflow-hidden p-0 shadow-2xl">
+    <Card className="fixed inset-x-3 bottom-3 z-40 flex h-[min(520px,calc(100vh-5.5rem))] flex-col overflow-hidden p-0 shadow-2xl sm:inset-x-auto sm:bottom-6 sm:right-6 sm:w-96">
       <div className="flex items-center justify-between border-b border-border bg-primary/5 px-4 py-3">
         <div className="flex items-center gap-2 font-semibold text-sm">
           <Sparkles className="h-4 w-4 text-primary" /> MediOS Assistant

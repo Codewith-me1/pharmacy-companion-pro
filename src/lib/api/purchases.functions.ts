@@ -7,83 +7,57 @@ import { withTenant } from "../db/tenant.server";
 import { requireUserId } from "../auth/require-user.server";
 import type { getDb } from "../db/client.server";
 
+// Every field is `.nullable()` rather than `.optional()`, and confidence has no `.default()` —
+// OpenAI's Structured Outputs (strict JSON schema mode) requires every property to always be
+// present in the output; "optional" isn't representable, only "present but possibly null". The
+// model is forced to actually decide null vs. a value for each field instead of omitting it,
+// which is itself an accuracy win on top of guaranteeing the JSON always matches this shape
+// exactly — no more malformed/missing-field parse failures to fall back on defaults for.
 const extractedItemSchema = z.object({
-  medicineName: z.string(),
-  pack: z.string().nullable().optional(),
-  batchNumber: z.string().nullable().optional(),
-  expiryDate: z.string().nullable().optional(), // YYYY-MM
-  manufactureDate: z.string().nullable().optional(),
-  hsnCode: z.string().nullable().optional(),
-  mrp: z.number().nullable().optional(),
-  ptr: z.number().nullable().optional(),
-  pts: z.number().nullable().optional(),
-  purchasePrice: z.number().nullable().optional(),
-  sellingPrice: z.number().nullable().optional(),
-  gstPercent: z.number().nullable().optional(),
-  cgst: z.number().nullable().optional(),
-  sgst: z.number().nullable().optional(),
-  igst: z.number().nullable().optional(),
-  discount: z.number().nullable().optional(),
-  scheme: z.string().nullable().optional(),
-  freeQuantity: z.number().nullable().optional(),
-  quantity: z.number().nullable().optional(),
-  confidence: z.number().min(0).max(1).default(0.6),
+  medicineName: z.string().describe("Product/brand name as printed, without dosage strength baked in unless it's part of the brand name."),
+  pack: z.string().nullable().describe("Pack size as printed, e.g. '10s', '200ML', '20G', '1X10'."),
+  batchNumber: z.string().nullable().describe("Batch/lot number as printed, alphanumeric."),
+  expiryDate: z.string().nullable().describe("Expiry date as printed, usually MM/YYYY."),
+  manufactureDate: z.string().nullable().describe("Manufacture date as printed, usually MM/YYYY."),
+  hsnCode: z.string().nullable().describe("HSN code, typically 4-8 digits."),
+  mrp: z.number().nullable().describe("Maximum Retail Price per unit."),
+  ptr: z.number().nullable().describe("Price to Retailer per unit, if printed as a separate column from purchase price."),
+  pts: z.number().nullable().describe("Price to Stockist per unit, if printed."),
+  purchasePrice: z.number().nullable().describe("The actual per-unit rate this pharmacy is being charged (often labelled Rate/Cost)."),
+  sellingPrice: z.number().nullable().describe("Suggested selling price, only if explicitly printed — do not compute this yourself."),
+  gstPercent: z.number().nullable().describe("Total GST rate for this line, e.g. 12 or 18. If only CGST+SGST or IGST are printed, sum/report the combined rate here."),
+  cgst: z.number().nullable().describe("CGST amount or rate if printed separately (intra-state invoice)."),
+  sgst: z.number().nullable().describe("SGST amount or rate if printed separately (intra-state invoice)."),
+  igst: z.number().nullable().describe("IGST amount or rate if printed separately (inter-state invoice)."),
+  discount: z.number().nullable().describe("Line-level discount percent or amount, if printed."),
+  scheme: z.string().nullable().describe("Any promotional scheme text printed for this line, e.g. '10+1 free'."),
+  freeQuantity: z.number().nullable().describe("Free/bonus quantity granted on this line, separate from the billed quantity."),
+  quantity: z.number().nullable().describe("Billed quantity for this line (not including any free quantity)."),
+  confidence: z
+    .number()
+    .min(0)
+    .max(1)
+    .describe(
+      "Your own 0-1 certainty that THIS SPECIFIC ROW was read correctly overall. 0.9+ only for a fully legible, unambiguous row. Below 0.5 for rows with multiple illegible or guessed characters. Never skip a row for low confidence — report your best reading and lower this instead.",
+    ),
 });
 
 const extractedInvoiceSchema = z.object({
-  supplierName: z.string().nullable().optional(),
-  supplierGstNumber: z.string().nullable().optional(),
-  supplierDlNo: z.string().nullable().optional(),
-  supplierAddress: z.string().nullable().optional(),
-  invoiceNumber: z.string().nullable().optional(),
-  serialNumber: z.string().nullable().optional(),
-  invoiceDate: z.string().nullable().optional(),
-  billNumber: z.string().nullable().optional(),
-  invoiceTotal: z.number().nullable().optional(),
-  netAmount: z.number().nullable().optional(),
-  taxAmount: z.number().nullable().optional(),
-  items: z.array(extractedItemSchema),
+  supplierName: z.string().nullable().describe("The selling party's (supplier's) business name."),
+  supplierGstNumber: z.string().nullable().describe("The SUPPLIER's own GSTIN printed on the invoice."),
+  supplierDlNo: z.string().nullable().describe("The SUPPLIER's own Drug License number printed on the invoice — never the buyer's/pharmacy's own DL number."),
+  supplierAddress: z.string().nullable().describe("The supplier's printed address."),
+  invoiceNumber: z.string().nullable().describe("The invoice/bill number."),
+  serialNumber: z.string().nullable().describe("A separate serial/reference number, only if printed distinctly from the invoice number."),
+  invoiceDate: z.string().nullable().describe("The invoice date as printed."),
+  billNumber: z.string().nullable().describe("An alternate bill number field, only if the invoice prints a bill number distinct from the invoice number."),
+  invoiceTotal: z.number().nullable().describe("The final grand total of the invoice, after tax."),
+  netAmount: z.number().nullable().describe("The net/taxable amount before tax, if printed as a separate subtotal."),
+  taxAmount: z.number().nullable().describe("The total tax amount for the whole invoice, if printed as a single figure."),
+  items: z.array(extractedItemSchema).describe("Every line item in the goods table, in the same top-to-bottom order as printed. Never truncate, summarize, or merge rows — one entry per printed row, even for 20+ rows."),
 });
 
 const STANDARD_GST_SLABS = [0, 5, 12, 18, 28];
-
-const JSON_SHAPE_HINT = JSON.stringify({
-  supplierName: "string|null",
-  supplierGstNumber: "string|null",
-  supplierDlNo: "string|null (the SUPPLIER's own Drug License number printed on the invoice, not yours)",
-  supplierAddress: "string|null",
-  invoiceNumber: "string|null",
-  serialNumber: "string|null (the invoice's own serial/reference number, if printed separately from the invoice number)",
-  invoiceDate: "string|null",
-  billNumber: "string|null",
-  invoiceTotal: "number|null",
-  netAmount: "number|null",
-  taxAmount: "number|null",
-  items: [
-    {
-      medicineName: "string",
-      pack: "string|null (pack size as printed, e.g. '10s', '200ML', '20G', '1X10')",
-      batchNumber: "string|null",
-      expiryDate: "string|null",
-      manufactureDate: "string|null",
-      hsnCode: "string|null",
-      mrp: "number|null",
-      ptr: "number|null",
-      pts: "number|null",
-      purchasePrice: "number|null",
-      sellingPrice: "number|null",
-      gstPercent: "number|null",
-      cgst: "number|null",
-      sgst: "number|null",
-      igst: "number|null",
-      discount: "number|null",
-      scheme: "string|null",
-      freeQuantity: "number|null",
-      quantity: "number|null",
-      confidence: "number (0-1)",
-    },
-  ],
-});
 
 function normalizeExpiry(raw: string | null | undefined): string | null {
   if (!raw) return null;
@@ -235,33 +209,43 @@ export const extractInvoice = createServerFn({ method: "POST" })
     }
 
     const { default: OpenAI } = await import("openai");
+    const { zodResponseFormat } = await import("openai/helpers/zod");
     const client = new OpenAI({ apiKey: config.openaiApiKey });
 
-    const response = await client.chat.completions.create({
-      model: process.env.OPENAI_VISION_MODEL || "gpt-4o",
+    // gpt-4o-mini instead of full gpt-4o: gpt-4o's vision pricing is roughly 15-20x mini's, and
+    // most of the accuracy gap is recoverable through a stricter prompt + a schema that forces
+    // the model to commit to a value instead of drifting — not through raw model size. Structured
+    // Outputs (response_format below) guarantees the JSON always matches extractedInvoiceSchema
+    // exactly (every field present, correct types, no malformed/truncated JSON to recover from),
+    // which was previously a real source of dropped/misplaced fields with loose json_object mode.
+    const response = await client.chat.completions.parse({
+      model: process.env.OPENAI_VISION_MODEL || "gpt-4o-mini",
       temperature: 0,
-      max_tokens: 8000,
-      response_format: { type: "json_object" },
+      max_tokens: 12_000,
+      response_format: zodResponseFormat(extractedInvoiceSchema, "invoice_extraction"),
       messages: [
         {
           role: "system",
           content: [
             "You are an expert pharmacist's assistant specializing in reading Indian pharmaceutical purchase invoices, including ones that are blurry, skewed, low-light, partially cropped, or photographed at an angle.",
-            "Work like a meticulous human transcriber: zoom into each row mentally, use surrounding context (column headers, repeated patterns, typical Indian pharma invoice conventions) to resolve ambiguous characters (e.g. 0 vs O, 1 vs I, 5 vs S), and never skip a row just because part of it is hard to read.",
-            "Extract EVERY line item in the goods table, top to bottom, even if there are 20+ rows — do not truncate or summarize.",
-            "Extract structured data as JSON matching this shape exactly:",
-            JSON_SHAPE_HINT,
-            "confidence is your 0-1 certainty for that line item's OCR accuracy overall (lower it for blurry/ambiguous rows instead of dropping them).",
-            "Only use null when a field is truly absent from the invoice or fully illegible — for partially legible values, give your best reading at a lower confidence rather than nulling it out.",
-            "Expiry/manufacture dates are usually MM/YYYY. GST is usually split as CGST+SGST (intra-state) or IGST (inter-state) — infer the total gstPercent from whichever is present.",
-          ].join(" "),
+            "",
+            "Work like a meticulous human transcriber, not a quick scanner:",
+            "- Read the column headers first and map every column before transcribing any row, so you don't confuse similarly-positioned columns (e.g. PTR vs PTS vs MRP, or Free Qty vs Billed Qty) across different invoice layouts.",
+            "- Zoom into each row mentally. Use surrounding context — repeated patterns in the same column, typical Indian pharma invoice conventions, and neighboring rows — to resolve ambiguous characters (0 vs O, 1 vs I, 5 vs S, 8 vs B).",
+            "- Process the ENTIRE goods table top to bottom, one row at a time, even if there are 20+ rows. Never truncate, summarize, merge adjacent rows, or skip a row because it's hard to read — extract your best reading and lower that row's confidence instead.",
+            "- Cross-check arithmetic where possible: if a row prints quantity, rate and amount, amount should roughly equal quantity × rate — if it clearly doesn't, you likely misread one of the three, so re-examine that row before finalizing it.",
+            "- Only output null for a field when it is genuinely absent from the invoice or fully illegible — never null a partially legible value; give your best reading at lower confidence instead.",
+            "- GST is usually printed as CGST+SGST (intra-state) or IGST (inter-state), sometimes as a rate (%) and sometimes as an amount. Report whichever is printed in cgst/sgst/igst, and always fill gstPercent with the combined rate even if you have to sum CGST%+SGST%.",
+            "- Expiry/manufacture dates are usually MM/YYYY — report them exactly as printed, don't convert to a full date yourself.",
+            "- supplierDlNo and supplierGstNumber belong to the SELLER printed on the invoice letterhead, never the buyer's own details even if both appear on the page.",
+          ].join("\n"),
         },
         {
           role: "user",
           content: [
             {
               type: "text",
-              text: "Extract every field and every line item from this purchase invoice as accurately as possible, including if the photo quality is imperfect.",
+              text: "Extract every field and every line item from this purchase invoice as accurately as possible, including if the photo quality is imperfect. Work through the goods table row by row — do not stop early.",
             },
             {
               type: "image_url",
@@ -272,8 +256,14 @@ export const extractInvoice = createServerFn({ method: "POST" })
       ],
     });
 
-    const raw = response.choices[0]?.message?.content ?? "{}";
-    const parsed = extractedInvoiceSchema.parse(JSON.parse(raw));
+    const message = response.choices[0]?.message;
+    if (message?.refusal) {
+      throw new Error(`The AI declined to extract this invoice: ${message.refusal}`);
+    }
+    const parsed = message?.parsed;
+    if (!parsed) {
+      throw new Error("The AI did not return any extracted data for this invoice. Try a clearer photo.");
+    }
     const draft = await withTenant(userId, async (db) => buildDraftFromExtraction(db, parsed));
     return { draft, sourceLabel: data.sourceLabel };
   });
