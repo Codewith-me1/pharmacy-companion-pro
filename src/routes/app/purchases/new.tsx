@@ -5,6 +5,7 @@ import { Camera, ImagePlus, Loader2, Mail, ScanLine, Trash2, Video } from "lucid
 import { extractInvoice, savePurchase } from "@/lib/api/purchases.functions";
 import { fileToBase64 } from "@/lib/file-to-base64";
 import { pdfToImageBlob } from "@/lib/pdf-to-image";
+import { enhanceInvoiceImage } from "@/lib/enhance-image";
 import { WebcamCapture } from "@/components/webcam-capture";
 import { FetchEmailDialog } from "@/components/fetch-email-dialog";
 import { Button } from "@/components/ui/button";
@@ -34,7 +35,7 @@ const FLAG_LABELS: Record<string, string> = {
 
 function NewPurchase() {
   const navigate = useNavigate();
-  const [step, setStep] = useState<"capture" | "converting" | "extracting" | "review">("capture");
+  const [step, setStep] = useState<"capture" | "converting" | "enhancing" | "extracting" | "review">("capture");
   const [showWebcam, setShowWebcam] = useState(false);
   const [showEmailDialog, setShowEmailDialog] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -42,10 +43,14 @@ function NewPurchase() {
   const [saving, setSaving] = useState(false);
 
   async function processBase64(base64: string, mimeType: string, source: typeof sourceLabel) {
-    setStep("extracting");
     setSourceLabel(source);
+    setStep("enhancing");
+    const enhanced = await enhanceInvoiceImage(base64, mimeType);
+    setStep("extracting");
     try {
-      const result = await extractInvoice({ data: { imageBase64: base64, mimeType, sourceLabel: source } });
+      const result = await extractInvoice({
+        data: { imageBase64: enhanced.base64, mimeType: enhanced.mimeType, sourceLabel: source },
+      });
       setDraft(result.draft);
       setStep("review");
       toast.success(`Extracted ${result.draft.items.length} line item(s) from the invoice.`);
@@ -192,6 +197,15 @@ function NewPurchase() {
         </Card>
       )}
 
+      {step === "enhancing" && (
+        <Card>
+          <CardContent className="flex flex-col items-center gap-4 p-16">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">Sharpening and correcting the photo…</p>
+          </CardContent>
+        </Card>
+      )}
+
       {step === "extracting" && (
         <Card>
           <CardContent className="flex flex-col items-center gap-4 p-16">
@@ -203,6 +217,20 @@ function NewPurchase() {
 
       {step === "review" && draft && (
         <div className="flex flex-col gap-4">
+          {draft.overallConfidence < 0.6 && (
+            <Card className="border-amber-500/50 bg-amber-500/10">
+              <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+                <p className="text-sm text-amber-700 dark:text-amber-400">
+                  Overall confidence is only {Math.round(draft.overallConfidence * 100)}% — the photo may have been
+                  blurry, dark, or at an angle. Carefully check every row below against the original invoice, or
+                  retake the photo in better light for a cleaner read.
+                </p>
+                <Button variant="outline" size="sm" onClick={() => setStep("capture")}>
+                  Retake Photo
+                </Button>
+              </CardContent>
+            </Card>
+          )}
           <Card>
             <CardHeader>
               <CardTitle className="text-sm">Invoice Details</CardTitle>

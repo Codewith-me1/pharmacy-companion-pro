@@ -40,6 +40,91 @@ export const listBatchesForMedicine = createServerFn({ method: "GET" })
     );
   });
 
+export const createBatch = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      medicineId: z.number(),
+      batchNo: z.string().min(1),
+      expiryDate: z.string().min(1),
+      manufactureDate: z.string().optional(),
+      quantity: z.number().int().min(0),
+      purchasePrice: z.number(),
+      mrp: z.number(),
+      ptr: z.number().optional(),
+      pts: z.number().optional(),
+      supplierId: z.number().optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const userId = await requireUserId();
+    return withTenant(userId, async (db) => {
+      const [batch] = await db
+        .insert(batches)
+        .values({
+          medicineId: data.medicineId,
+          batchNo: data.batchNo,
+          expiryDate: data.expiryDate,
+          manufactureDate: data.manufactureDate,
+          quantity: data.quantity,
+          purchasePrice: data.purchasePrice,
+          mrp: data.mrp,
+          ptr: data.ptr ?? 0,
+          pts: data.pts ?? 0,
+          supplierId: data.supplierId ?? null,
+        })
+        .returning();
+
+      if (data.quantity > 0) {
+        await db.insert(stockMovements).values({
+          medicineId: data.medicineId,
+          batchId: batch.id,
+          type: "in",
+          quantity: data.quantity,
+          reason: "Manually added batch",
+          referenceType: "manual",
+        });
+      }
+      return { id: batch.id };
+    });
+  });
+
+export const updateBatch = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      id: z.number(),
+      batchNo: z.string().min(1),
+      expiryDate: z.string().min(1),
+      manufactureDate: z.string().optional(),
+      quantity: z.number().int().min(0),
+      purchasePrice: z.number(),
+      mrp: z.number(),
+      ptr: z.number().optional(),
+      pts: z.number().optional(),
+      supplierId: z.number().optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const userId = await requireUserId();
+    return withTenant(userId, async (db) => {
+      const { id, ...fields } = data;
+      await db
+        .update(batches)
+        .set({ ...fields, supplierId: fields.supplierId ?? null })
+        .where(eq(batches.id, id));
+      return { id };
+    });
+  });
+
+export const deleteBatch = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.number() }))
+  .handler(async ({ data }) => {
+    const userId = await requireUserId();
+    return withTenant(userId, async (db) => {
+      await db.delete(batches).where(eq(batches.id, data.id));
+      return { ok: true };
+    });
+  });
+
 export const recordStockMovement = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({
