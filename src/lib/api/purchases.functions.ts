@@ -93,6 +93,10 @@ async function buildDraftFromExtraction(db: ReturnType<typeof getDb>, extracted:
     matchedSupplier = found[0];
   }
 
+  // Shared across all items — must live outside the map callback, otherwise each item would
+  // check against its own fresh empty set and duplicate_batch could never actually fire.
+  const seenBatches = new Set<string>();
+
   const items = await Promise.all(
     extracted.items.map(async (item) => {
       const flags: string[] = [];
@@ -138,7 +142,6 @@ async function buildDraftFromExtraction(db: ReturnType<typeof getDb>, extracted:
       }
       if (!item.quantity || item.quantity <= 0) flags.push("quantity_mismatch");
 
-      const seenBatches = new Set<string>();
       const key = `${item.medicineName.toLowerCase()}|${item.batchNumber ?? ""}`;
       if (seenBatches.has(key)) flags.push("duplicate_batch");
       seenBatches.add(key);
@@ -170,6 +173,8 @@ async function buildDraftFromExtraction(db: ReturnType<typeof getDb>, extracted:
     }),
   );
 
+  flagSuspiciousDuplicateRows(items);
+
   return {
     supplier: {
       id: matchedSupplier?.id ?? null,
@@ -189,6 +194,35 @@ async function buildDraftFromExtraction(db: ReturnType<typeof getDb>, extracted:
     overallConfidence:
       items.length === 0 ? 0 : items.reduce((sum, i) => sum + i.confidence, 0) / items.length,
   };
+}
+
+// Defensive check independent of model behavior: dense multi-row invoices are a known failure
+// mode where a model "anchors" on the first row it reads clearly and reuses its batch/price/HSN
+// for later rows instead of re-reading each row from the image. If 2+ DIFFERENT medicines end up
+// with an identical batch+MRP+purchase-price+HSN combination, that's almost certainly this bug,
+// not a real coincidence — flag every row in the cluster and force low confidence so the
+// pharmacist re-checks them against the photo before saving, regardless of how it happened.
+// Exported standalone (not inlined) so it's unit-testable without a DB or OpenAI call.
+export function flagSuspiciousDuplicateRows(
+  items: { medicineNameRaw: string; batchNo: string | null; mrp: number; purchasePrice: number; hsnCode: string | null; flags: string[]; confidence: number }[],
+): void {
+  const valueClusters = new Map<string, number[]>();
+  items.forEach((item, idx) => {
+    if (!item.batchNo) return;
+    const clusterKey = `${item.batchNo.toLowerCase()}|${item.mrp}|${item.purchasePrice}|${item.hsnCode ?? ""}`;
+    const indices = valueClusters.get(clusterKey) ?? [];
+    indices.push(idx);
+    valueClusters.set(clusterKey, indices);
+  });
+  for (const indices of valueClusters.values()) {
+    if (indices.length < 2) continue;
+    const distinctNames = new Set(indices.map((idx) => items[idx].medicineNameRaw.trim().toLowerCase()));
+    if (distinctNames.size < 2) continue; // genuinely the same medicine repeated — not the bug this guards against
+    for (const idx of indices) {
+      items[idx].flags.push("possible_duplicate_data");
+      items[idx].confidence = Math.min(items[idx].confidence, 0.3);
+    }
+  }
 }
 
 export const extractInvoice = createServerFn({ method: "POST" })
@@ -212,14 +246,14 @@ export const extractInvoice = createServerFn({ method: "POST" })
     const { zodResponseFormat } = await import("openai/helpers/zod");
     const client = new OpenAI({ apiKey: config.openaiApiKey });
 
-    // gpt-4o-mini instead of full gpt-4o: gpt-4o's vision pricing is roughly 15-20x mini's, and
-    // most of the accuracy gap is recoverable through a stricter prompt + a schema that forces
-    // the model to commit to a value instead of drifting — not through raw model size. Structured
-    // Outputs (response_format below) guarantees the JSON always matches extractedInvoiceSchema
-    // exactly (every field present, correct types, no malformed/truncated JSON to recover from),
-    // which was previously a real source of dropped/misplaced fields with loose json_object mode.
+    // Accuracy takes priority over cost here (per explicit product decision) — full gpt-4o is
+    // dramatically more reliable than gpt-4o-mini at reading dense multi-row invoice tables
+    // without "anchoring" on one row's values and reusing them for others, which is the failure
+    // mode this was actually hitting. Structured Outputs (response_format below) guarantees the
+    // JSON always matches extractedInvoiceSchema exactly (every field present, correct types),
+    // which is a real accuracy floor independent of model size, so it's kept regardless.
     const response = await client.chat.completions.parse({
-      model: process.env.OPENAI_VISION_MODEL || "gpt-4o-mini",
+      model: process.env.OPENAI_VISION_MODEL || "gpt-4o",
       temperature: 0,
       max_tokens: 12_000,
       response_format: zodResponseFormat(extractedInvoiceSchema, "invoice_extraction"),
@@ -233,6 +267,9 @@ export const extractInvoice = createServerFn({ method: "POST" })
             "- Read the column headers first and map every column before transcribing any row, so you don't confuse similarly-positioned columns (e.g. PTR vs PTS vs MRP, or Free Qty vs Billed Qty) across different invoice layouts.",
             "- Zoom into each row mentally. Use surrounding context — repeated patterns in the same column, typical Indian pharma invoice conventions, and neighboring rows — to resolve ambiguous characters (0 vs O, 1 vs I, 5 vs S, 8 vs B).",
             "- Process the ENTIRE goods table top to bottom, one row at a time, even if there are 20+ rows. Never truncate, summarize, merge adjacent rows, or skip a row because it's hard to read — extract your best reading and lower that row's confidence instead.",
+            "",
+            "CRITICAL — a real failure mode to actively guard against: every row has its OWN printed batch number, MRP, rate, HSN code and expiry, even when several rows are the same brand family or look visually similar (e.g. the same product in different pack sizes, like '1LTX16' vs '550MLX30' vs '60MLX200'). Before writing a row's values, re-read THAT row's own cells in the image — do not carry over, copy, or default to the previous row's batch/price/HSN/expiry just because the product name is similar. If you notice you are about to output the same batch number and price for two rows with different item descriptions, stop and re-examine both rows individually in the image; it is far more likely you mis-read one of them than that they are genuinely identical.",
+            "",
             "- Cross-check arithmetic where possible: if a row prints quantity, rate and amount, amount should roughly equal quantity × rate — if it clearly doesn't, you likely misread one of the three, so re-examine that row before finalizing it.",
             "- Only output null for a field when it is genuinely absent from the invoice or fully illegible — never null a partially legible value; give your best reading at lower confidence instead.",
             "- GST is usually printed as CGST+SGST (intra-state) or IGST (inter-state), sometimes as a rate (%) and sometimes as an amount. Report whichever is printed in cgst/sgst/igst, and always fill gstPercent with the combined rate even if you have to sum CGST%+SGST%.",
@@ -245,7 +282,7 @@ export const extractInvoice = createServerFn({ method: "POST" })
           content: [
             {
               type: "text",
-              text: "Extract every field and every line item from this purchase invoice as accurately as possible, including if the photo quality is imperfect. Work through the goods table row by row — do not stop early.",
+              text: "Extract every field and every line item from this purchase invoice as accurately as possible, including if the photo quality is imperfect. Work through the goods table row by row, re-reading each row's own cells individually — do not reuse a previous row's values, and do not stop early.",
             },
             {
               type: "image_url",

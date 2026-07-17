@@ -29,6 +29,7 @@ const FLAG_LABELS: Record<string, string> = {
   price_change: "Price changed",
   gst_mismatch: "GST mismatch",
   quantity_mismatch: "Qty issue",
+  possible_duplicate_data: "Check vs photo — looks copied",
 };
 
 function NewPurchase() {
