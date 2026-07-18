@@ -45,7 +45,10 @@ function renderTableAsGrid(table: DocumentTable, index: number): string {
   const grid: string[][] = Array.from({ length: table.rowCount }, () => Array(table.columnCount).fill(""));
 
   for (const cell of table.cells) {
-    const value = cell.content.replace(/\s+/g, " ").trim();
+    // Some invoices stack extra info (pack size, batch/expiry) as separate lines within a single
+    // "Particulars" cell rather than using dedicated columns — keep line breaks visible (as " / ")
+    // instead of collapsing them into one run-on string, so that structure isn't lost.
+    const value = cell.content.replace(/\s*\n\s*/g, " / ").replace(/[ \t]+/g, " ").trim();
     if (cell.rowIndex < table.rowCount && cell.columnIndex < table.columnCount) {
       grid[cell.rowIndex][cell.columnIndex] = cell.kind === "columnHeader" ? `[${value}]` : value;
     }

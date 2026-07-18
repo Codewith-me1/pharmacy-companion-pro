@@ -15,11 +15,11 @@ import type { getDb } from "../db/client.server";
 // which is itself an accuracy win on top of guaranteeing the JSON always matches this shape
 // exactly — no more malformed/missing-field parse failures to fall back on defaults for.
 const extractedItemSchema = z.object({
-  medicineName: z.string().describe("Product/brand name as printed, without dosage strength baked in unless it's part of the brand name."),
-  pack: z.string().nullable().describe("Pack size as printed, e.g. '10s', '200ML', '20G', '1X10'."),
+  medicineName: z.string().describe("Product/brand name as printed, without dosage strength baked in unless it's part of the brand name. Some invoices only have one 'Particulars'/'Description' column, with pack size and/or batch/expiry printed as extra lines stacked directly below the name inside that same cell — pull those into pack/batchNumber/expiryDate below rather than leaving them stuck in this field."),
+  pack: z.string().nullable().describe("Pack size as printed, e.g. '10s', '200ML', '20G', '1X10'. If there's no dedicated Pack column, look for a pack-size-shaped token (NxN, a number followed by ML/G/S/TAB) stacked under the medicine name in its own cell/line."),
   batchNumber: z.string().nullable().describe("Batch/lot number as printed, alphanumeric."),
-  expiryDate: z.string().nullable().describe("Expiry date as printed, usually MM/YYYY."),
-  manufactureDate: z.string().nullable().describe("Manufacture date as printed, usually MM/YYYY."),
+  expiryDate: z.string().nullable().describe("Expiry date as printed. Usually MM/YYYY, but very often a 2-digit-year short form like '08/27' (meaning August 2027, NOT day 27) — report exactly what's printed either way, don't expand the year yourself. If there's no dedicated Expiry column, look for a date-shaped token stacked under the medicine name in its own cell/line."),
+  manufactureDate: z.string().nullable().describe("Manufacture date as printed, usually MM/YYYY or the 2-digit-year form MM/YY."),
   hsnCode: z.string().nullable().describe("HSN code, typically 4-8 digits."),
   mrp: z.number().nullable().describe("Maximum Retail Price per unit."),
   ptr: z.number().nullable().describe("Price to Retailer per unit, if printed as a separate column from purchase price."),
@@ -32,8 +32,8 @@ const extractedItemSchema = z.object({
   igst: z.number().nullable().describe("IGST amount or rate if printed separately (inter-state invoice)."),
   discount: z.number().nullable().describe("Line-level discount percent or amount, if printed."),
   scheme: z.string().nullable().describe("Any promotional scheme text printed for this line, e.g. '10+1 free'."),
-  freeQuantity: z.number().nullable().describe("Free/bonus quantity granted on this line, separate from the billed quantity."),
-  quantity: z.number().nullable().describe("Billed quantity for this line (not including any free quantity)."),
+  freeQuantity: z.number().nullable().describe("Free/bonus quantity granted on this line, separate from the billed quantity. Often under a column header abbreviated 'F.Qty' or 'Free'."),
+  quantity: z.number().nullable().describe("Billed quantity for this line (not including any free quantity). The column header is very often abbreviated to 'Qty', 'Bill Qty', or 'Q.ty' rather than spelled out."),
   confidence: z
     .number()
     .min(0)
@@ -75,6 +75,16 @@ function normalizeExpiry(raw: string | null | undefined): string | null {
   if (yyyyMm) {
     const year = Number(yyyyMm[1]);
     const month = Number(yyyyMm[2]);
+    const lastDay = new Date(year, month, 0).getDate();
+    return `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+  }
+  // 2-digit-year short form, e.g. "08/27" meaning August 2027 — very common on Indian pharma
+  // invoices. Handled before the generic Date fallback below, because `new Date("08/27")` would
+  // otherwise misparse this as day 27 of the CURRENT year rather than a month/year expiry.
+  const mmYy = trimmed.match(/^(\d{1,2})[/-](\d{2})$/);
+  if (mmYy) {
+    const month = Number(mmYy[1]);
+    const year = 2000 + Number(mmYy[2]);
     const lastDay = new Date(year, month, 0).getDate();
     return `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
   }
@@ -290,11 +300,15 @@ export const extractInvoice = createServerFn({ method: "POST" })
             "",
             "CRITICAL — use the table grid as the source of truth, not just the free text above it: every row in the '=== DETECTED TABLE STRUCTURE ===' grid has its OWN batch number, MRP, rate, HSN and expiry, even when several rows are the same brand family or look like similar products (e.g. the same item in different pack sizes). Read each row's values from that row's own grid cells only — never carry over or default to a neighboring row's values just because the product name looks similar. If two DIFFERENT medicine rows end up with an identical batch+MRP+rate+HSN combination, that almost always means a value got assigned to the wrong row — re-check both rows against the grid before finalizing either one.",
             "",
+            "Real layout quirks to watch for — do not let these cause null/wrong fields:",
+            "- Column headers are very often abbreviated: 'Qty'/'Bill Qty'/'Q.ty' = billed quantity, 'F.Qty'/'Free' = free quantity, 'Exp'/'Exp.Dt'/'E.Date' = expiry, 'B.No'/'Bt.No' = batch number, 'P.Rate'/'Rate'/'Cost' = purchase price, 'Disc'/'Disc%' = discount. Map these the same as their full names.",
+            "- Expiry (and manufacture) dates are often a 2-digit-year short form like '08/27' — that means August 2027, NOT day-27-of-something. Treat any MM/YY-shaped token in an expiry-ish column or position the same way you'd treat MM/YYYY; report it exactly as printed either way, don't expand the year yourself.",
+            "- Some invoices have no separate Pack or Expiry column at all — only one 'Particulars'/'Description' column. On those, the pack size and/or batch+expiry are printed as extra lines stacked directly below the medicine name, inside that same cell (they'll show up as extra text right after the product name in the grid cell or in the full document text immediately below it). Actively look there for a pack-size-shaped token (e.g. '10X10', '100ML', '1X6', '30S') and a date-shaped token (MM/YY or MM/YYYY) whenever the dedicated pack/expiry columns are empty or missing, and use those instead of leaving the fields null.",
+            "",
             "- Process every row of the goods table top to bottom, even if there are 20+ rows. Never skip, merge, truncate, or summarize rows.",
             "- Cross-check arithmetic where possible: if a row has quantity, rate and amount, amount should roughly equal quantity x rate — a clear mismatch means one of the three was likely misread; re-derive it from the grid before finalizing.",
-            "- Only output null for a field when it is genuinely absent from both the OCR text and the table grid — if the OCR text shows a partial or slightly garbled value, give your best corrected reading and lower that row's confidence instead of nulling it.",
+            "- Only output null for a field when it is genuinely absent from both the OCR text and the table grid (including stacked lines under the medicine name) — if there's a partial or slightly garbled value anywhere, give your best corrected reading and lower that row's confidence instead of nulling it.",
             "- GST is usually printed as CGST+SGST (intra-state) or IGST (inter-state), as either a rate (%) or an amount. Report whichever is present in cgst/sgst/igst, and always fill gstPercent with the combined rate even if you have to sum CGST%+SGST%.",
-            "- Expiry/manufacture dates are usually MM/YYYY — report them exactly as they appear in the OCR text, don't convert to a full date yourself.",
             "- supplierDlNo and supplierGstNumber belong to the SELLER printed on the invoice letterhead, never the buyer's/pharmacy's own details even if both appear in the text.",
           ].join("\n"),
         },
