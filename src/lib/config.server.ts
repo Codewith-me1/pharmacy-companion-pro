@@ -21,5 +21,7 @@ export function getServerConfig() {
     nodeEnv: process.env.NODE_ENV,
     openaiApiKey: process.env.OPENAI_API_KEY,
     databaseUrl: process.env.DATABASE_URL,
+    azureDocIntelEndpoint: process.env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT,
+    azureDocIntelKey: process.env.AZURE_DOCUMENT_INTELLIGENCE_KEY,
   };
 }

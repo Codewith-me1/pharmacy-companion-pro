@@ -5,6 +5,7 @@ import { purchases, purchaseItems, medicines, batches, suppliers, stockMovements
 import { getServerConfig } from "../config.server";
 import { withTenant } from "../db/tenant.server";
 import { requireUserId } from "../auth/require-user.server";
+import { analyzeInvoiceLayout } from "../azure-document-intelligence.server";
 import type { getDb } from "../db/client.server";
 
 // Every field is `.nullable()` rather than `.optional()`, and confidence has no `.default()` —
@@ -241,19 +242,39 @@ export const extractInvoice = createServerFn({ method: "POST" })
         "OPENAI_API_KEY is not configured. Add it to your .env file to enable AI invoice extraction.",
       );
     }
+    if (!config.azureDocIntelEndpoint || !config.azureDocIntelKey) {
+      throw new Error(
+        "Azure Document Intelligence is not configured. Add AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT and AZURE_DOCUMENT_INTELLIGENCE_KEY to your .env file to enable AI invoice extraction.",
+      );
+    }
+
+    // Pipeline: Bill Image -> Azure Document Intelligence (Layout) -> OCR text + table grid ->
+    // ChatGPT -> structured JSON. Azure's layout model is a specialist OCR+table-structure
+    // engine, so it pins every printed value to an exact row/column far more reliably than asking
+    // a vision LLM to read the raw photo. That split — Azure does the pixel-reading, the LLM does
+    // the semantic mapping onto our schema — is what buys the accuracy improvement over sending
+    // the photo straight to the vision model.
+    const layout = await analyzeInvoiceLayout(
+      config.azureDocIntelEndpoint,
+      config.azureDocIntelKey,
+      Buffer.from(data.imageBase64, "base64"),
+    );
+
+    if (!layout.text || layout.text.replace(/[^a-zA-Z0-9]/g, "").length < 20) {
+      throw new Error(
+        "Azure Document Intelligence could not read any text from this photo. Try a clearer, better-lit photo.",
+      );
+    }
 
     const { default: OpenAI } = await import("openai");
     const { zodResponseFormat } = await import("openai/helpers/zod");
     const client = new OpenAI({ apiKey: config.openaiApiKey });
 
-    // Accuracy takes priority over cost here (per explicit product decision) — full gpt-4o is
-    // dramatically more reliable than gpt-4o-mini at reading dense multi-row invoice tables
-    // without "anchoring" on one row's values and reusing them for others, which is the failure
-    // mode this was actually hitting. Structured Outputs (response_format below) guarantees the
-    // JSON always matches extractedInvoiceSchema exactly (every field present, correct types),
-    // which is a real accuracy floor independent of model size, so it's kept regardless.
+    // Structured Outputs (response_format below) guarantees the JSON always matches
+    // extractedInvoiceSchema exactly (every field present, correct types) — a real accuracy floor
+    // independent of model size, so it's kept regardless of which model reads the OCR text.
     const response = await client.chat.completions.parse({
-      model: process.env.OPENAI_VISION_MODEL || "gpt-4o",
+      model: process.env.OPENAI_EXTRACTION_MODEL || process.env.OPENAI_VISION_MODEL || "gpt-4o",
       temperature: 0,
       max_tokens: 12_000,
       response_format: zodResponseFormat(extractedInvoiceSchema, "invoice_extraction"),
@@ -261,41 +282,30 @@ export const extractInvoice = createServerFn({ method: "POST" })
         {
           role: "system",
           content: [
-            "You are an expert pharmacist's assistant specializing in reading Indian pharmaceutical purchase invoices, including ones that are blurry, skewed, low-light, partially cropped, or photographed at an angle. The photo you receive has already been resolution-normalized and had contrast/sharpening applied — treat any remaining softness as real blur to work through, not a sign the image failed to load.",
+            "You are an expert pharmacist's assistant that converts OCR-extracted text and table structure from an Indian pharmaceutical purchase invoice into structured data. You are NOT looking at the original photo — you are given Azure Document Intelligence's OCR output: the full document text in reading order, plus an explicit row/column grid for every table it detected on the page.",
             "",
-            "Handling a genuinely blurry or low-quality photo — do all of these before giving up on a character or field:",
-            "- Use the printed column structure as a decoder: a smeared price still occupies the Rate column and has the right number of digits; a blurred batch code still follows the batch-numbering pattern used by the other, clearer rows on the same invoice.",
-            "- Use repetition across the page: the same supplier/date/GST-rate/HSN often repeats down the whole invoice — if one row's copy is too blurry to read a field that is clearly legible on neighboring rows for the same product or column, use that pattern to resolve it, and lower confidence rather than guessing blindly.",
-            "- Distinguish confusable characters using context, not just shape: 0/O, 1/I/l, 5/S, 8/B, 6/G, 2/Z — pick whichever is consistent with the column being numeric vs. alphabetic and with the surrounding digits forming a plausible batch code, HSN code, or price.",
-            "- A blurry photo degrades gradually, not uniformly — some rows or fields may be perfectly sharp even if others aren't. Read each field on its own merits; don't lower confidence on a clear field just because a nearby field was hard to read.",
-            "- Only fall back to null when a character is truly unrecoverable (fully out of frame, ink smear with no visible shape at all) — a blurry-but-shaped character almost always has one most-likely reading; report it and reflect the uncertainty in that row's confidence score instead of nulling it.",
+            "Your job has two parts:",
+            "1. Understand the invoice: find which table is the goods/line-items table, and map its columns to the schema fields (figure out which column is Rate vs MRP vs PTR vs PTS, Free Qty vs Billed Qty, etc. from the header row and typical Indian pharma invoice conventions — column order varies between suppliers).",
+            "2. Correct for OCR noise: Azure's OCR is very accurate but not perfect. Resolve likely misreads using context — a numeric column showing a stray letter almost certainly meant the visually similar digit (O->0, S->5, I or l->1, B->8, G->6, Z->2); pick whichever reading is consistent with the column being numeric vs alphabetic and with what's typical for that field (HSN codes are 4-8 digits, GST is one of 0/5/12/18/28).",
             "",
-            "Work like a meticulous human transcriber, not a quick scanner:",
-            "- Read the column headers first and map every column before transcribing any row, so you don't confuse similarly-positioned columns (e.g. PTR vs PTS vs MRP, or Free Qty vs Billed Qty) across different invoice layouts.",
-            "- Zoom into each row mentally. Use surrounding context — repeated patterns in the same column, typical Indian pharma invoice conventions, and neighboring rows — to resolve ambiguous characters (0 vs O, 1 vs I, 5 vs S, 8 vs B).",
-            "- Process the ENTIRE goods table top to bottom, one row at a time, even if there are 20+ rows. Never truncate, summarize, merge adjacent rows, or skip a row because it's hard to read — extract your best reading and lower that row's confidence instead.",
+            "CRITICAL — use the table grid as the source of truth, not just the free text above it: every row in the '=== DETECTED TABLE STRUCTURE ===' grid has its OWN batch number, MRP, rate, HSN and expiry, even when several rows are the same brand family or look like similar products (e.g. the same item in different pack sizes). Read each row's values from that row's own grid cells only — never carry over or default to a neighboring row's values just because the product name looks similar. If two DIFFERENT medicine rows end up with an identical batch+MRP+rate+HSN combination, that almost always means a value got assigned to the wrong row — re-check both rows against the grid before finalizing either one.",
             "",
-            "CRITICAL — a real failure mode to actively guard against: every row has its OWN printed batch number, MRP, rate, HSN code and expiry, even when several rows are the same brand family or look visually similar (e.g. the same product in different pack sizes, like '1LTX16' vs '550MLX30' vs '60MLX200'). Before writing a row's values, re-read THAT row's own cells in the image — do not carry over, copy, or default to the previous row's batch/price/HSN/expiry just because the product name is similar. If you notice you are about to output the same batch number and price for two rows with different item descriptions, stop and re-examine both rows individually in the image; it is far more likely you mis-read one of them than that they are genuinely identical.",
-            "",
-            "- Cross-check arithmetic where possible: if a row prints quantity, rate and amount, amount should roughly equal quantity × rate — if it clearly doesn't, you likely misread one of the three, so re-examine that row before finalizing it.",
-            "- Only output null for a field when it is genuinely absent from the invoice or fully illegible — never null a partially legible value; give your best reading at lower confidence instead.",
-            "- GST is usually printed as CGST+SGST (intra-state) or IGST (inter-state), sometimes as a rate (%) and sometimes as an amount. Report whichever is printed in cgst/sgst/igst, and always fill gstPercent with the combined rate even if you have to sum CGST%+SGST%.",
-            "- Expiry/manufacture dates are usually MM/YYYY — report them exactly as printed, don't convert to a full date yourself.",
-            "- supplierDlNo and supplierGstNumber belong to the SELLER printed on the invoice letterhead, never the buyer's own details even if both appear on the page.",
+            "- Process every row of the goods table top to bottom, even if there are 20+ rows. Never skip, merge, truncate, or summarize rows.",
+            "- Cross-check arithmetic where possible: if a row has quantity, rate and amount, amount should roughly equal quantity x rate — a clear mismatch means one of the three was likely misread; re-derive it from the grid before finalizing.",
+            "- Only output null for a field when it is genuinely absent from both the OCR text and the table grid — if the OCR text shows a partial or slightly garbled value, give your best corrected reading and lower that row's confidence instead of nulling it.",
+            "- GST is usually printed as CGST+SGST (intra-state) or IGST (inter-state), as either a rate (%) or an amount. Report whichever is present in cgst/sgst/igst, and always fill gstPercent with the combined rate even if you have to sum CGST%+SGST%.",
+            "- Expiry/manufacture dates are usually MM/YYYY — report them exactly as they appear in the OCR text, don't convert to a full date yourself.",
+            "- supplierDlNo and supplierGstNumber belong to the SELLER printed on the invoice letterhead, never the buyer's/pharmacy's own details even if both appear in the text.",
           ].join("\n"),
         },
         {
           role: "user",
           content: [
-            {
-              type: "text",
-              text: "Extract every field and every line item from this purchase invoice as accurately as possible, including if the photo quality is imperfect. Work through the goods table row by row, re-reading each row's own cells individually — do not reuse a previous row's values, and do not stop early.",
-            },
-            {
-              type: "image_url",
-              image_url: { url: `data:${data.mimeType};base64,${data.imageBase64}`, detail: "high" },
-            },
-          ],
+            "Extract every field and every line item from this purchase invoice's OCR output as accurately as possible.",
+            "Work through the goods table grid row by row, using each row's own cells — do not reuse a previous row's values, and do not stop early.",
+            "",
+            layout.text,
+          ].join("\n"),
         },
       ],
     });
