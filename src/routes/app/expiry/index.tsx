@@ -187,7 +187,10 @@ function ExpiryPage() {
                   </Popover>
                 </div>
                 <F label="Batch Number">
-                  <Input value={form.batchNo} onChange={(e) => setForm({ ...form, batchNo: e.target.value })} />
+                  <Input
+                    value={form.batchNo}
+                    onChange={(e) => setForm({ ...form, batchNo: e.target.value.toUpperCase() })}
+                  />
                 </F>
                 <F label="Quantity">
                   <Input

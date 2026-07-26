@@ -62,7 +62,7 @@ export const createBatch = createServerFn({ method: "POST" })
         .insert(batches)
         .values({
           medicineId: data.medicineId,
-          batchNo: data.batchNo,
+          batchNo: data.batchNo.toUpperCase(),
           expiryDate: data.expiryDate,
           manufactureDate: data.manufactureDate,
           quantity: data.quantity,
@@ -109,7 +109,7 @@ export const updateBatch = createServerFn({ method: "POST" })
       const { id, ...fields } = data;
       await db
         .update(batches)
-        .set({ ...fields, supplierId: fields.supplierId ?? null })
+        .set({ ...fields, batchNo: fields.batchNo.toUpperCase(), supplierId: fields.supplierId ?? null })
         .where(eq(batches.id, id));
       return { id };
     });

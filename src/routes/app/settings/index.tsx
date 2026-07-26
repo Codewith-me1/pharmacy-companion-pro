@@ -19,6 +19,7 @@ import {
   Eye,
   Plus,
   Trash2,
+  ChevronDown,
 } from "lucide-react";
 import { getBusinessSettings, saveBusinessSettings } from "@/lib/api/business-settings.functions";
 import { getEmailSettings, saveEmailSettings, testEmailConnection } from "@/lib/api/email-settings.functions";
@@ -31,6 +32,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+
+// Auto-fills IMAP host/port for common providers so most users never have to see, let alone
+// touch, those fields — only unusual/self-hosted mail servers need the Advanced section.
+const KNOWN_IMAP_PROVIDERS: { match: RegExp; host: string; port: number }[] = [
+  { match: /@gmail\.com$/i, host: "imap.gmail.com", port: 993 },
+  { match: /@(outlook|hotmail|live)\.[a-z.]+$/i, host: "outlook.office365.com", port: 993 },
+  { match: /@yahoo\.[a-z.]+$/i, host: "imap.mail.yahoo.com", port: 993 },
+  { match: /@icloud\.com$/i, host: "imap.mail.me.com", port: 993 },
+  { match: /@zoho\.[a-z.]+$/i, host: "imap.zoho.com", port: 993 },
+];
+
+function guessImapConfig(email: string): { host: string; port: number } | null {
+  const provider = KNOWN_IMAP_PROVIDERS.find((p) => p.match.test(email.trim()));
+  return provider ? { host: provider.host, port: provider.port } : null;
+}
 
 export const Route = createFileRoute("/app/settings/")({
   component: SettingsPage,
@@ -213,6 +230,7 @@ function EmailIntegrationCard() {
   const queryClient = useQueryClient();
   const [form, setForm] = useState(emptyEmail);
   const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const { data } = useQuery({ queryKey: ["email-settings"], queryFn: () => getEmailSettings() });
 
   useEffect(() => {
@@ -225,8 +243,25 @@ function EmailIntegrationCard() {
         enabled: data.enabled,
         password: "",
       });
+      // If the saved host isn't what we'd auto-detect for this address, it's a custom/self-hosted
+      // mailbox the user deliberately configured — surface Advanced so they can see it's there.
+      const guess = data.email ? guessImapConfig(data.email) : null;
+      if (data.imapHost && guess?.host !== data.imapHost) setAdvancedOpen(true);
     }
   }, [data]);
+
+  function handleEmailChange(email: string) {
+    const guess = guessImapConfig(email);
+    setForm((f) => ({
+      ...f,
+      email,
+      // Only auto-fill while the host still looks auto-detected (or blank) — never clobber a
+      // host the user typed in themselves under Advanced.
+      ...(guess && (!f.imapHost || guessImapConfig(f.email)?.host === f.imapHost)
+        ? { imapHost: guess.host, imapPort: guess.port, useTls: true }
+        : {}),
+    }));
+  }
 
   const saveMutation = useMutation({
     mutationFn: () => saveEmailSettings({ data: form }),
@@ -263,19 +298,9 @@ function EmailIntegrationCard() {
           <strong>App Password</strong> — your regular password won't work. Credentials are stored locally in this
           app's database only.
         </p>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
           <Field label="Email Address">
-            <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="owner@gmail.com" />
-          </Field>
-          <Field label="IMAP Host">
-            <Input value={form.imapHost} onChange={(e) => setForm({ ...form, imapHost: e.target.value })} placeholder="imap.gmail.com" />
-          </Field>
-          <Field label="IMAP Port">
-            <Input
-              type="number"
-              value={form.imapPort}
-              onChange={(e) => setForm({ ...form, imapPort: Number(e.target.value) })}
-            />
+            <Input value={form.email} onChange={(e) => handleEmailChange(e.target.value)} placeholder="owner@gmail.com" />
           </Field>
           <Field label={data?.hasPassword ? "App Password (leave blank to keep current)" : "App Password"}>
             <Input
@@ -285,23 +310,55 @@ function EmailIntegrationCard() {
               placeholder={data?.hasPassword ? "•••••••• (unchanged)" : ""}
             />
           </Field>
-        </div>
-        <div className="flex flex-wrap items-center gap-6">
-          <label className="flex items-center gap-2 text-sm">
-            <Switch checked={form.useTls} onCheckedChange={(v) => setForm({ ...form, useTls: v })} />
-            Use TLS/SSL
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <Switch checked={form.enabled} onCheckedChange={(v) => setForm({ ...form, enabled: v })} />
-            Enable email fetching
-          </label>
-          {testResult && (
-            <span className={`flex items-center gap-1 text-xs ${testResult.ok ? "text-primary" : "text-destructive"}`}>
-              {testResult.ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
-              {testResult.ok ? "Connection verified" : testResult.error}
+          <label className="flex items-end pb-1.5">
+            <span className="flex items-center gap-2 text-sm">
+              <Switch checked={form.enabled} onCheckedChange={(v) => setForm({ ...form, enabled: v })} />
+              Enable email fetching
             </span>
-          )}
+          </label>
         </div>
+
+        <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+          <CollapsibleTrigger className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${advancedOpen ? "rotate-180" : ""}`} />
+            Advanced (IMAP server settings)
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-3 flex flex-col gap-3">
+            <p className="text-xs text-muted-foreground">
+              Auto-detected for Gmail, Outlook, Yahoo, iCloud and Zoho from your email address — only change
+              these if you use a different or self-hosted mail server.
+            </p>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+              <Field label="IMAP Host">
+                <Input
+                  value={form.imapHost}
+                  onChange={(e) => setForm({ ...form, imapHost: e.target.value })}
+                  placeholder="imap.gmail.com"
+                />
+              </Field>
+              <Field label="IMAP Port">
+                <Input
+                  type="number"
+                  value={form.imapPort}
+                  onChange={(e) => setForm({ ...form, imapPort: Number(e.target.value) })}
+                />
+              </Field>
+              <label className="flex items-end pb-1.5">
+                <span className="flex items-center gap-2 text-sm">
+                  <Switch checked={form.useTls} onCheckedChange={(v) => setForm({ ...form, useTls: v })} />
+                  Use TLS/SSL
+                </span>
+              </label>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+
+        {testResult && (
+          <span className={`flex items-center gap-1 text-xs ${testResult.ok ? "text-primary" : "text-destructive"}`}>
+            {testResult.ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
+            {testResult.ok ? "Connection verified" : testResult.error}
+          </span>
+        )}
         <div className="flex gap-2">
           <Button
             variant="outline"

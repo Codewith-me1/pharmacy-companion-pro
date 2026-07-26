@@ -58,6 +58,38 @@ export const upsertDoctor = createServerFn({ method: "POST" })
     });
   });
 
+export const bulkImportDoctors = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ rows: z.array(z.record(z.string(), z.string())) }))
+  .handler(async ({ data }) => {
+    const userId = await requireUserId();
+    return withTenant(userId, async (db) => {
+      let created = 0;
+      let skipped = 0;
+      const errors: string[] = [];
+
+      for (const [index, row] of data.rows.entries()) {
+        const rowNumber = index + 2;
+        const name = row.name?.trim();
+        if (!name) {
+          skipped++;
+          errors.push(`Row ${rowNumber}: missing doctor name — skipped.`);
+          continue;
+        }
+        await db.insert(doctors).values({
+          name,
+          hospital: row.hospital?.trim() || undefined,
+          clinic: row.clinic?.trim() || undefined,
+          phone: row.phone?.trim() || undefined,
+          licenseNumber: row.licenseNumber?.trim() || undefined,
+          specialization: row.specialization?.trim() || undefined,
+        });
+        created++;
+      }
+
+      return { created, skipped, errors };
+    });
+  });
+
 export const deleteDoctor = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.number() }))
   .handler(async ({ data }) => {

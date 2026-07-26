@@ -10,8 +10,11 @@ import {
   getDoctorWithMedicines,
   addDoctorFavoriteMedicine,
   removeDoctorFavoriteMedicine,
+  bulkImportDoctors,
 } from "@/lib/api/doctors.functions";
 import { listMedicines } from "@/lib/api/medicines.functions";
+import { ImportCsvDialog } from "@/components/import-csv-dialog";
+import type { CsvTemplateColumn } from "@/lib/csv";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,6 +42,15 @@ export const Route = createFileRoute("/app/doctors/")({
 });
 
 const empty = { name: "", hospital: "", clinic: "", phone: "", licenseNumber: "", specialization: "" };
+
+const DOCTOR_IMPORT_COLUMNS: CsvTemplateColumn[] = [
+  { key: "name", label: "Name", required: true, example: "Rakesh Sharma" },
+  { key: "specialization", label: "Specialization", example: "General Physician" },
+  { key: "hospital", label: "Hospital", example: "" },
+  { key: "clinic", label: "Clinic", example: "" },
+  { key: "phone", label: "Phone", example: "9876543210" },
+  { key: "licenseNumber", label: "License Number", example: "" },
+];
 
 function DoctorsPage() {
   const { q } = Route.useSearch();
@@ -130,6 +142,13 @@ function DoctorsPage() {
             Doctor database with prescription templates — pick a doctor's favourites fast at billing time.
           </p>
         </div>
+        <div className="flex gap-2">
+        <ImportCsvDialog
+          entityName="Doctor"
+          columns={DOCTOR_IMPORT_COLUMNS}
+          onImport={(rows) => bulkImportDoctors({ data: { rows } })}
+          onImported={() => queryClient.invalidateQueries({ queryKey: ["doctors"] })}
+        />
         <Dialog
           open={addOpen}
           onOpenChange={(open) => {
@@ -176,6 +195,7 @@ function DoctorsPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <div className="relative max-w-sm">

@@ -49,6 +49,36 @@ export const upsertCustomer = createServerFn({ method: "POST" })
     });
   });
 
+export const bulkImportCustomers = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ rows: z.array(z.record(z.string(), z.string())) }))
+  .handler(async ({ data }) => {
+    const userId = await requireUserId();
+    return withTenant(userId, async (db) => {
+      let created = 0;
+      let skipped = 0;
+      const errors: string[] = [];
+
+      for (const [index, row] of data.rows.entries()) {
+        const rowNumber = index + 2;
+        const name = row.name?.trim();
+        if (!name) {
+          skipped++;
+          errors.push(`Row ${rowNumber}: missing customer name — skipped.`);
+          continue;
+        }
+        await db.insert(customers).values({
+          name,
+          phone: row.phone?.trim() || undefined,
+          address: row.address?.trim() || undefined,
+          gstNumber: row.gstNumber?.trim() || undefined,
+        });
+        created++;
+      }
+
+      return { created, skipped, errors };
+    });
+  });
+
 export const deleteCustomer = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.number() }))
   .handler(async ({ data }) => {

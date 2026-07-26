@@ -205,16 +205,20 @@ export const upsertMedicine = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await requireUserId();
     return withTenant(userId, async (db) => {
-      const { id, batchNo, quantity, expiryDate, supplierId, ...medicineFields } = data;
+      const { id, batchNo, quantity, expiryDate, supplierId, ...rest } = data;
+      // Medicine name and pack are always stored upper-case for consistent, scannable display and
+      // reliable matching against OCR/catalog data (which is also normalized to upper-case).
+      const medicineFields = { ...rest, name: rest.name.toUpperCase(), pack: rest.pack?.toUpperCase() };
+      const normalizedBatchNo = batchNo?.toUpperCase();
       if (id) {
         await db.update(medicines).set(medicineFields).where(eq(medicines.id, id));
         return { id };
       }
       const [inserted] = await db.insert(medicines).values(medicineFields).returning();
-      if (batchNo && quantity && quantity > 0 && expiryDate) {
+      if (normalizedBatchNo && quantity && quantity > 0 && expiryDate) {
         await db.insert(batches).values({
           medicineId: inserted.id,
-          batchNo,
+          batchNo: normalizedBatchNo,
           expiryDate,
           quantity,
           purchasePrice: medicineFields.purchasePrice,
@@ -223,6 +227,44 @@ export const upsertMedicine = createServerFn({ method: "POST" })
         });
       }
       return { id: inserted.id };
+    });
+  });
+
+export const bulkImportMedicines = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ rows: z.array(z.record(z.string(), z.string())) }))
+  .handler(async ({ data }) => {
+    const userId = await requireUserId();
+    return withTenant(userId, async (db) => {
+      let created = 0;
+      let skipped = 0;
+      const errors: string[] = [];
+
+      for (const [index, row] of data.rows.entries()) {
+        const rowNumber = index + 2; // +1 for header row, +1 for 1-based line numbering
+        const name = row.name?.trim();
+        if (!name) {
+          skipped++;
+          errors.push(`Row ${rowNumber}: missing medicine name — skipped.`);
+          continue;
+        }
+        await db.insert(medicines).values({
+          name: name.toUpperCase(),
+          brand: row.brand?.trim() || undefined,
+          company: row.company?.trim() || undefined,
+          category: row.category?.trim() || undefined,
+          pack: row.pack?.trim() ? row.pack.trim().toUpperCase() : undefined,
+          mrp: Number(row.mrp) || 0,
+          sellingPrice: Number(row.sellingPrice) || Number(row.mrp) || 0,
+          purchasePrice: Number(row.purchasePrice) || 0,
+          gstPercent: Number(row.gstPercent) || 12,
+          discount: Number(row.discount) || 0,
+          hsnCode: row.hsnCode?.trim() || undefined,
+          barcode: row.barcode?.trim() || undefined,
+        });
+        created++;
+      }
+
+      return { created, skipped, errors };
     });
   });
 

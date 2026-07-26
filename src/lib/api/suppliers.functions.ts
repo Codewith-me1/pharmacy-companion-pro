@@ -72,6 +72,38 @@ export const upsertSupplier = createServerFn({ method: "POST" })
     });
   });
 
+export const bulkImportSuppliers = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ rows: z.array(z.record(z.string(), z.string())) }))
+  .handler(async ({ data }) => {
+    const userId = await requireUserId();
+    return withTenant(userId, async (db) => {
+      let created = 0;
+      let skipped = 0;
+      const errors: string[] = [];
+
+      for (const [index, row] of data.rows.entries()) {
+        const rowNumber = index + 2;
+        const name = row.name?.trim();
+        if (!name) {
+          skipped++;
+          errors.push(`Row ${rowNumber}: missing supplier name — skipped.`);
+          continue;
+        }
+        await db.insert(suppliers).values({
+          name,
+          gstNumber: row.gstNumber?.trim() || undefined,
+          dlNo: row.dlNo?.trim() || undefined,
+          address: row.address?.trim() || undefined,
+          phone: row.phone?.trim() || undefined,
+          creditDays: Number(row.creditDays) || 0,
+        });
+        created++;
+      }
+
+      return { created, skipped, errors };
+    });
+  });
+
 export const deleteSupplier = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.number() }))
   .handler(async ({ data }) => {

@@ -3,7 +3,9 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Pencil, Plus, Search, Trash2 } from "lucide-react";
-import { listSuppliers, upsertSupplier, deleteSupplier } from "@/lib/api/suppliers.functions";
+import { listSuppliers, upsertSupplier, deleteSupplier, bulkImportSuppliers } from "@/lib/api/suppliers.functions";
+import { ImportCsvDialog } from "@/components/import-csv-dialog";
+import type { CsvTemplateColumn } from "@/lib/csv";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,6 +33,15 @@ export const Route = createFileRoute("/app/suppliers/")({
 });
 
 const empty = { name: "", gstNumber: "", dlNo: "", address: "", phone: "", creditDays: 30, outstanding: 0 };
+
+const SUPPLIER_IMPORT_COLUMNS: CsvTemplateColumn[] = [
+  { key: "name", label: "Name", required: true, example: "Shree Nath Agencies" },
+  { key: "gstNumber", label: "GST Number", example: "" },
+  { key: "dlNo", label: "D.L. No", example: "" },
+  { key: "phone", label: "Phone", example: "9876543210" },
+  { key: "creditDays", label: "Credit Days", example: "30" },
+  { key: "address", label: "Address", example: "" },
+];
 
 function SuppliersPage() {
   const { q } = Route.useSearch();
@@ -101,6 +112,13 @@ function SuppliersPage() {
           <h1 className="text-xl font-bold">Suppliers</h1>
           <p className="text-sm text-muted-foreground">Supplier directory, credit terms and purchase history.</p>
         </div>
+        <div className="flex gap-2">
+        <ImportCsvDialog
+          entityName="Supplier"
+          columns={SUPPLIER_IMPORT_COLUMNS}
+          onImport={(rows) => bulkImportSuppliers({ data: { rows } })}
+          onImported={() => queryClient.invalidateQueries({ queryKey: ["suppliers"] })}
+        />
         <Dialog
           open={addOpen}
           onOpenChange={(open) => {
@@ -151,6 +169,7 @@ function SuppliersPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <div className="relative max-w-sm">

@@ -191,7 +191,10 @@ function MedicineDetailPage() {
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <F label="Batch Number">
-                  <Input value={form.batchNo} onChange={(e) => setForm({ ...form, batchNo: e.target.value })} />
+                  <Input
+                    value={form.batchNo}
+                    onChange={(e) => setForm({ ...form, batchNo: e.target.value.toUpperCase() })}
+                  />
                 </F>
                 <F label="Stock Quantity">
                   <Input

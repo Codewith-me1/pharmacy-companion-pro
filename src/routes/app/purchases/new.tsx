@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Camera, ImagePlus, Loader2, Mail, Plus, ScanLine, SearchCheck, SquarePen, Trash2 } from "lucide-react";
+import { Camera, ChevronDown, ImagePlus, Loader2, Mail, Plus, ScanLine, SearchCheck, SquarePen, Trash2 } from "lucide-react";
 import { extractInvoice, savePurchase } from "@/lib/api/purchases.functions";
 import { listMedicines } from "@/lib/api/medicines.functions";
 import { fileToBase64 } from "@/lib/file-to-base64";
@@ -17,14 +17,20 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/app/purchases/new")({
   component: NewPurchase,
 });
 
-type DraftItem = Awaited<ReturnType<typeof extractInvoice>>["draft"]["items"][number];
-type Draft = Awaited<ReturnType<typeof extractInvoice>>["draft"];
+// The server function's client-side inferred return type narrows medicineId to plain `number`,
+// even though a brand-new (not-yet-in-the-DB) line item genuinely has none yet — savePurchase's
+// actual schema accepts `number | null` here, so widen it back for the client-side draft state.
+type DraftItem = Omit<Awaited<ReturnType<typeof extractInvoice>>["draft"]["items"][number], "medicineId"> & {
+  medicineId: number | null;
+};
+type Draft = Omit<Awaited<ReturnType<typeof extractInvoice>>["draft"], "items"> & { items: DraftItem[] };
 
 const FLAG_LABELS: Record<string, string> = {
   wrong_expiry: "Wrong expiry",
@@ -58,6 +64,8 @@ function NewPurchase() {
   const [saving, setSaving] = useState(false);
   const [addItemOpen, setAddItemOpen] = useState(false);
   const [medicineSearch, setMedicineSearch] = useState("");
+  const [moreDetailsOpen, setMoreDetailsOpen] = useState(false);
+  const [showAdvancedCols, setShowAdvancedCols] = useState(false);
   const { data: medicineResults } = useQuery({
     queryKey: ["medicines", medicineSearch],
     queryFn: () => listMedicines({ data: { search: medicineSearch } }),
@@ -70,43 +78,70 @@ function NewPurchase() {
     setStep("review");
   }
 
-  function addManualItem(m: NonNullable<typeof medicineResults>[number]) {
+  function pushItem(item: DraftItem) {
     setDraft((d) => {
       const base = d ?? emptyDraft;
-      return {
-        ...base,
-        items: [
-          ...base.items,
-          {
-            medicineId: m.id,
-            medicineNameRaw: m.name,
-            pack: m.pack,
-            batchNo: null,
-            expiryDate: null,
-            manufactureDate: null,
-            hsnCode: m.hsnCode,
-            mrp: m.mrp,
-            ptr: 0,
-            pts: 0,
-            purchasePrice: m.purchasePrice,
-            sellingPrice: m.sellingPrice,
-            gstPercent: m.gstPercent,
-            cgst: 0,
-            sgst: 0,
-            igst: 0,
-            discount: 0,
-            scheme: null,
-            freeQty: 0,
-            quantity: 0,
-            confidence: 1,
-            flags: [],
-          },
-        ],
-      };
+      return { ...base, items: [...base.items, item] };
     });
     setAddItemOpen(false);
     setMedicineSearch("");
     if (step !== "review") setStep("review");
+  }
+
+  function addManualItem(m: NonNullable<typeof medicineResults>[number]) {
+    pushItem({
+      medicineId: m.id,
+      medicineNameRaw: m.name,
+      pack: m.pack,
+      batchNo: null,
+      expiryDate: null,
+      manufactureDate: null,
+      hsnCode: m.hsnCode,
+      mrp: m.mrp,
+      ptr: 0,
+      pts: 0,
+      purchasePrice: m.purchasePrice,
+      sellingPrice: m.sellingPrice,
+      gstPercent: m.gstPercent,
+      cgst: 0,
+      sgst: 0,
+      igst: 0,
+      discount: 0,
+      scheme: null,
+      freeQty: 0,
+      quantity: 0,
+      confidence: 1,
+      flags: [],
+    });
+  }
+
+  // For a genuinely new medicine that isn't in the catalog/database yet — every field starts
+  // blank/zero and is filled in directly in the table, same as any other row.
+  function addBlankItem() {
+    pushItem({
+      medicineId: null,
+      medicineNameRaw: medicineSearch.trim().toUpperCase(),
+      pack: null,
+      batchNo: null,
+      expiryDate: null,
+      manufactureDate: null,
+      hsnCode: null,
+      mrp: 0,
+      ptr: 0,
+      pts: 0,
+      purchasePrice: 0,
+      sellingPrice: 0,
+      gstPercent: 12,
+      cgst: 0,
+      sgst: 0,
+      igst: 0,
+      discount: 0,
+      scheme: null,
+      freeQty: 0,
+      quantity: 0,
+      confidence: 1,
+      flags: [],
+    });
   }
 
   async function processBase64(base64: string, mimeType: string, source: "camera" | "pdf" | "email") {
@@ -293,62 +328,73 @@ function NewPurchase() {
             <CardHeader>
               <CardTitle className="text-sm">Invoice Details</CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-4 md:grid-cols-4">
-              <Field label="Supplier">
-                <Input
-                  value={draft.supplier.name}
-                  onChange={(e) => setDraft({ ...draft, supplier: { ...draft.supplier, name: e.target.value } })}
-                />
-              </Field>
-              <Field label="Supplier GST">
-                <Input
-                  value={draft.supplier.gstNumber}
-                  onChange={(e) => setDraft({ ...draft, supplier: { ...draft.supplier, gstNumber: e.target.value } })}
-                />
-              </Field>
-              <Field label="Supplier D.L. No">
-                <Input
-                  value={draft.supplier.dlNo}
-                  onChange={(e) => setDraft({ ...draft, supplier: { ...draft.supplier, dlNo: e.target.value } })}
-                />
-              </Field>
-              <Field label="Invoice Number">
-                <Input value={draft.invoiceNumber} onChange={(e) => setDraft({ ...draft, invoiceNumber: e.target.value })} />
-              </Field>
-              <Field label="Serial Number">
-                <Input value={draft.serialNumber} onChange={(e) => setDraft({ ...draft, serialNumber: e.target.value })} />
-              </Field>
-              <Field label="Invoice Date">
-                <Input
-                  type="date"
-                  value={draft.invoiceDate}
-                  onChange={(e) => setDraft({ ...draft, invoiceDate: e.target.value })}
-                />
-              </Field>
-              <Field label="Bill Number">
-                <Input value={draft.billNumber} onChange={(e) => setDraft({ ...draft, billNumber: e.target.value })} />
-              </Field>
-              <Field label="Invoice Total">
-                <Input
-                  type="number"
-                  value={draft.invoiceTotal}
-                  onChange={(e) => setDraft({ ...draft, invoiceTotal: Number(e.target.value) })}
-                />
-              </Field>
-              <Field label="Tax Amount">
-                <Input
-                  type="number"
-                  value={draft.taxAmount}
-                  onChange={(e) => setDraft({ ...draft, taxAmount: Number(e.target.value) })}
-                />
-              </Field>
-              <Field label="Net Amount">
-                <Input
-                  type="number"
-                  value={draft.netAmount}
-                  onChange={(e) => setDraft({ ...draft, netAmount: Number(e.target.value) })}
-                />
-              </Field>
+            <CardContent className="flex flex-col gap-4">
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                <Field label="Supplier">
+                  <Input
+                    value={draft.supplier.name}
+                    onChange={(e) => setDraft({ ...draft, supplier: { ...draft.supplier, name: e.target.value } })}
+                  />
+                </Field>
+                <Field label="Invoice Number">
+                  <Input value={draft.invoiceNumber} onChange={(e) => setDraft({ ...draft, invoiceNumber: e.target.value })} />
+                </Field>
+                <Field label="Invoice Date">
+                  <Input
+                    type="date"
+                    value={draft.invoiceDate}
+                    onChange={(e) => setDraft({ ...draft, invoiceDate: e.target.value })}
+                  />
+                </Field>
+                <Field label="Invoice Total">
+                  <Input
+                    type="number"
+                    value={draft.invoiceTotal}
+                    onChange={(e) => setDraft({ ...draft, invoiceTotal: Number(e.target.value) })}
+                  />
+                </Field>
+              </div>
+
+              <Collapsible open={moreDetailsOpen} onOpenChange={setMoreDetailsOpen}>
+                <CollapsibleTrigger className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">
+                  <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", moreDetailsOpen && "rotate-180")} />
+                  More invoice details (GST, D.L. No, serial/bill number, tax &amp; net amount)
+                </CollapsibleTrigger>
+                <CollapsibleContent className="mt-3 grid grid-cols-2 gap-4 md:grid-cols-4">
+                  <Field label="Supplier GST">
+                    <Input
+                      value={draft.supplier.gstNumber}
+                      onChange={(e) => setDraft({ ...draft, supplier: { ...draft.supplier, gstNumber: e.target.value } })}
+                    />
+                  </Field>
+                  <Field label="Supplier D.L. No">
+                    <Input
+                      value={draft.supplier.dlNo}
+                      onChange={(e) => setDraft({ ...draft, supplier: { ...draft.supplier, dlNo: e.target.value } })}
+                    />
+                  </Field>
+                  <Field label="Serial Number">
+                    <Input value={draft.serialNumber} onChange={(e) => setDraft({ ...draft, serialNumber: e.target.value })} />
+                  </Field>
+                  <Field label="Bill Number">
+                    <Input value={draft.billNumber} onChange={(e) => setDraft({ ...draft, billNumber: e.target.value })} />
+                  </Field>
+                  <Field label="Tax Amount">
+                    <Input
+                      type="number"
+                      value={draft.taxAmount}
+                      onChange={(e) => setDraft({ ...draft, taxAmount: Number(e.target.value) })}
+                    />
+                  </Field>
+                  <Field label="Net Amount">
+                    <Input
+                      type="number"
+                      value={draft.netAmount}
+                      onChange={(e) => setDraft({ ...draft, netAmount: Number(e.target.value) })}
+                    />
+                  </Field>
+                </CollapsibleContent>
+              </Collapsible>
             </CardContent>
           </Card>
 
@@ -357,6 +403,10 @@ function NewPurchase() {
               <CardTitle className="text-sm">
                 Line Items ({draft.items.length}) · Overall confidence {Math.round(draft.overallConfidence * 100)}%
               </CardTitle>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="ghost" onClick={() => setShowAdvancedCols((v) => !v)}>
+                  {showAdvancedCols ? "Hide" : "Show"} HSN / Free Qty / GST columns
+                </Button>
               <Popover open={addItemOpen} onOpenChange={setAddItemOpen}>
                 <PopoverTrigger asChild>
                   <Button size="sm" variant="outline">
@@ -372,7 +422,7 @@ function NewPurchase() {
                     />
                     <CommandList>
                       <CommandEmpty>
-                        {medicineSearch ? "No medicine matched." : "Start typing to search medicines…"}
+                        {medicineSearch ? "No medicine matched — add it as new below." : "Start typing to search medicines…"}
                       </CommandEmpty>
                       <CommandGroup>
                         {medicineResults?.map((m) => (
@@ -389,10 +439,19 @@ function NewPurchase() {
                           </CommandItem>
                         ))}
                       </CommandGroup>
+                      <CommandGroup heading="Not in the database yet?">
+                        <CommandItem value="__add_new_medicine__" onSelect={addBlankItem}>
+                          <Plus className="h-3.5 w-3.5 shrink-0" />
+                          {medicineSearch.trim()
+                            ? `Add "${medicineSearch.trim().toUpperCase()}" as a new medicine`
+                            : "Add a blank row for a new medicine"}
+                        </CommandItem>
+                      </CommandGroup>
                     </CommandList>
                   </Command>
                 </PopoverContent>
-              </Popover>
+                </Popover>
+              </div>
             </CardHeader>
             <CardContent>
               <Table>
@@ -402,13 +461,13 @@ function NewPurchase() {
                     <TableHead>Pack</TableHead>
                     <TableHead>Batch</TableHead>
                     <TableHead>Expiry</TableHead>
-                    <TableHead>HSN</TableHead>
+                    {showAdvancedCols && <TableHead>HSN</TableHead>}
                     <TableHead>Qty</TableHead>
-                    <TableHead>Free</TableHead>
+                    {showAdvancedCols && <TableHead>Free</TableHead>}
                     <TableHead>Rate ₹</TableHead>
                     <TableHead>MRP ₹</TableHead>
-                    <TableHead>GST %</TableHead>
-                    <TableHead>GST Value ₹</TableHead>
+                    {showAdvancedCols && <TableHead>GST %</TableHead>}
+                    {showAdvancedCols && <TableHead>GST Value ₹</TableHead>}
                     <TableHead>Amount ₹</TableHead>
                     <TableHead>Flags</TableHead>
                     <TableHead />
@@ -417,7 +476,7 @@ function NewPurchase() {
                 <TableBody>
                   {draft.items.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={14} className="p-8 text-center text-muted-foreground">
+                      <TableCell colSpan={showAdvancedCols ? 14 : 10} className="p-8 text-center text-muted-foreground">
                         No line items yet. Use "Add Item" to search for a medicine and add it manually.
                       </TableCell>
                     </TableRow>
@@ -430,15 +489,23 @@ function NewPurchase() {
                       <TableCell className="min-w-40">
                         <Input
                           value={item.medicineNameRaw}
-                          onChange={(e) => updateItem(i, { medicineNameRaw: e.target.value })}
+                          onChange={(e) => updateItem(i, { medicineNameRaw: e.target.value.toUpperCase() })}
                         />
                         {item.medicineId && <Badge variant="secondary" className="mt-1">existing medicine</Badge>}
                       </TableCell>
                       <TableCell>
-                        <Input className="w-20" value={item.pack ?? ""} onChange={(e) => updateItem(i, { pack: e.target.value })} />
+                        <Input
+                          className="w-20"
+                          value={item.pack ?? ""}
+                          onChange={(e) => updateItem(i, { pack: e.target.value.toUpperCase() })}
+                        />
                       </TableCell>
                       <TableCell>
-                        <Input className="w-24" value={item.batchNo ?? ""} onChange={(e) => updateItem(i, { batchNo: e.target.value })} />
+                        <Input
+                          className="w-24"
+                          value={item.batchNo ?? ""}
+                          onChange={(e) => updateItem(i, { batchNo: e.target.value.toUpperCase() })}
+                        />
                       </TableCell>
                       <TableCell>
                         <Input
@@ -448,9 +515,11 @@ function NewPurchase() {
                           onChange={(e) => updateItem(i, { expiryDate: e.target.value })}
                         />
                       </TableCell>
-                      <TableCell>
-                        <Input className="w-20" value={item.hsnCode ?? ""} onChange={(e) => updateItem(i, { hsnCode: e.target.value })} />
-                      </TableCell>
+                      {showAdvancedCols && (
+                        <TableCell>
+                          <Input className="w-20" value={item.hsnCode ?? ""} onChange={(e) => updateItem(i, { hsnCode: e.target.value })} />
+                        </TableCell>
+                      )}
                       <TableCell>
                         <Input
                           className="w-16"
@@ -459,14 +528,16 @@ function NewPurchase() {
                           onChange={(e) => updateItem(i, { quantity: Number(e.target.value) })}
                         />
                       </TableCell>
-                      <TableCell>
-                        <Input
-                          className="w-16"
-                          type="number"
-                          value={item.freeQty ?? 0}
-                          onChange={(e) => updateItem(i, { freeQty: Number(e.target.value) })}
-                        />
-                      </TableCell>
+                      {showAdvancedCols && (
+                        <TableCell>
+                          <Input
+                            className="w-16"
+                            type="number"
+                            value={item.freeQty ?? 0}
+                            onChange={(e) => updateItem(i, { freeQty: Number(e.target.value) })}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell>
                         <Input
                           className="w-20"
@@ -483,17 +554,21 @@ function NewPurchase() {
                           onChange={(e) => updateItem(i, { mrp: Number(e.target.value) })}
                         />
                       </TableCell>
-                      <TableCell>
-                        <Input
-                          className="w-16"
-                          type="number"
-                          value={item.gstPercent}
-                          onChange={(e) => updateItem(i, { gstPercent: Number(e.target.value) })}
-                        />
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-right font-mono text-xs text-muted-foreground">
-                        {((item.purchasePrice * item.quantity * item.gstPercent) / 100).toFixed(2)}
-                      </TableCell>
+                      {showAdvancedCols && (
+                        <TableCell>
+                          <Input
+                            className="w-16"
+                            type="number"
+                            value={item.gstPercent}
+                            onChange={(e) => updateItem(i, { gstPercent: Number(e.target.value) })}
+                          />
+                        </TableCell>
+                      )}
+                      {showAdvancedCols && (
+                        <TableCell className="whitespace-nowrap text-right font-mono text-xs text-muted-foreground">
+                          {((item.purchasePrice * item.quantity * item.gstPercent) / 100).toFixed(2)}
+                        </TableCell>
+                      )}
                       <TableCell className="whitespace-nowrap text-right font-mono text-xs">
                         {(item.purchasePrice * item.quantity).toFixed(2)}
                       </TableCell>

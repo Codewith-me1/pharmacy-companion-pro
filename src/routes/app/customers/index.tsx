@@ -3,7 +3,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Pencil, Plus, Search, Trash2 } from "lucide-react";
-import { listCustomers, upsertCustomer, getCustomer, deleteCustomer } from "@/lib/api/customers.functions";
+import { listCustomers, upsertCustomer, getCustomer, deleteCustomer, bulkImportCustomers } from "@/lib/api/customers.functions";
+import { ImportCsvDialog } from "@/components/import-csv-dialog";
+import type { CsvTemplateColumn } from "@/lib/csv";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,6 +33,13 @@ export const Route = createFileRoute("/app/customers/")({
 });
 
 const empty = { name: "", phone: "", address: "", gstNumber: "", creditBalance: 0, loyaltyPoints: 0 };
+
+const CUSTOMER_IMPORT_COLUMNS: CsvTemplateColumn[] = [
+  { key: "name", label: "Name", required: true, example: "Amit Kumar" },
+  { key: "phone", label: "Phone", example: "9876543210" },
+  { key: "gstNumber", label: "GST Number", example: "" },
+  { key: "address", label: "Address", example: "" },
+];
 
 function CustomersPage() {
   const { q } = Route.useSearch();
@@ -108,6 +117,13 @@ function CustomersPage() {
           <h1 className="text-xl font-bold">Customers</h1>
           <p className="text-sm text-muted-foreground">Customer directory, credit and loyalty tracking.</p>
         </div>
+        <div className="flex gap-2">
+        <ImportCsvDialog
+          entityName="Customer"
+          columns={CUSTOMER_IMPORT_COLUMNS}
+          onImport={(rows) => bulkImportCustomers({ data: { rows } })}
+          onImported={() => queryClient.invalidateQueries({ queryKey: ["customers"] })}
+        />
         <Dialog
           open={addOpen}
           onOpenChange={(open) => {
@@ -148,6 +164,7 @@ function CustomersPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <div className="relative max-w-sm">

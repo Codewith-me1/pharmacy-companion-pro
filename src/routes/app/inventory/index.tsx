@@ -3,10 +3,12 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { IndianRupee, ListFilter, Pencil, Pill, Plus, Search, SearchCheck, Trash2 } from "lucide-react";
-import { listMedicines, upsertMedicine, deleteMedicine } from "@/lib/api/medicines.functions";
+import { listMedicines, upsertMedicine, deleteMedicine, bulkImportMedicines } from "@/lib/api/medicines.functions";
 import { listSuppliers } from "@/lib/api/suppliers.functions";
 import { MEDICINE_CATEGORIES } from "@/lib/medicine-categories";
 import { MEDICINE_CATALOG, type MedicineCatalogItem } from "@/lib/medicine-catalog";
+import { ImportCsvDialog } from "@/components/import-csv-dialog";
+import type { CsvTemplateColumn } from "@/lib/csv";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,6 +45,21 @@ export const Route = createFileRoute("/app/inventory/")({
   }),
   component: Inventory,
 });
+
+const MEDICINE_IMPORT_COLUMNS: CsvTemplateColumn[] = [
+  { key: "name", label: "Name", required: true, example: "PARACETAMOL" },
+  { key: "brand", label: "Brand", example: "CROCIN" },
+  { key: "company", label: "Company", example: "GSK" },
+  { key: "category", label: "Category", example: "Tablet" },
+  { key: "pack", label: "Pack", example: "10X10" },
+  { key: "mrp", label: "MRP", example: "35" },
+  { key: "sellingPrice", label: "Selling Price", example: "32" },
+  { key: "purchasePrice", label: "Purchase Price", example: "20" },
+  { key: "gstPercent", label: "GST Percent", example: "12" },
+  { key: "discount", label: "Discount Percent", example: "0" },
+  { key: "hsnCode", label: "HSN Code", example: "30049099" },
+  { key: "barcode", label: "Barcode", example: "" },
+];
 
 const emptyMedicine = {
   name: "",
@@ -115,11 +132,11 @@ function Inventory() {
   function applyCatalogItem(item: MedicineCatalogItem) {
     setForm((f) => ({
       ...f,
-      name: item.name,
+      name: item.name.toUpperCase(),
       brand: item.brand,
       company: item.company,
       category: item.category,
-      pack: item.pack,
+      pack: item.pack.toUpperCase(),
       hsnCode: item.hsnCode,
       gstPercent: item.gstPercent,
     }));
@@ -161,6 +178,13 @@ function Inventory() {
           <h1 className="text-xl font-bold">Inventory</h1>
           <p className="text-sm text-muted-foreground">Medicine master and batch-level stock.</p>
         </div>
+        <div className="flex gap-2">
+        <ImportCsvDialog
+          entityName="Medicine"
+          columns={MEDICINE_IMPORT_COLUMNS}
+          onImport={(rows) => bulkImportMedicines({ data: { rows } })}
+          onImported={() => queryClient.invalidateQueries({ queryKey: ["medicines"] })}
+        />
         <Dialog
           open={addOpen}
           onOpenChange={(open) => {
@@ -242,7 +266,10 @@ function Inventory() {
                 </div>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
                   <F label="Name">
-                    <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+                    <Input
+                      value={form.name}
+                      onChange={(e) => setForm({ ...form, name: e.target.value.toUpperCase() })}
+                    />
                   </F>
                   <F label="Brand">
                     <Input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} />
@@ -266,9 +293,9 @@ function Inventory() {
                   </F>
                   <F label="Pack">
                     <Input
-                      placeholder="e.g. 10s, 200ML"
+                      placeholder="e.g. 10S, 200ML"
                       value={form.pack}
-                      onChange={(e) => setForm({ ...form, pack: e.target.value })}
+                      onChange={(e) => setForm({ ...form, pack: e.target.value.toUpperCase() })}
                     />
                   </F>
                   <F label="Barcode">
@@ -340,7 +367,10 @@ function Inventory() {
                     </div>
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
                       <F label="Batch Number">
-                        <Input value={form.batchNo} onChange={(e) => setForm({ ...form, batchNo: e.target.value })} />
+                        <Input
+                          value={form.batchNo}
+                          onChange={(e) => setForm({ ...form, batchNo: e.target.value.toUpperCase() })}
+                        />
                       </F>
                       <F label="Stock">
                         <Input
@@ -388,6 +418,7 @@ function Inventory() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3">
@@ -433,6 +464,7 @@ function Inventory() {
             <TableHeader>
               <TableRow>
                 <TableHead>Medicine</TableHead>
+                <TableHead>Pack</TableHead>
                 <TableHead>Batch No.</TableHead>
                 <TableHead>Company</TableHead>
                 <TableHead>Category</TableHead>
@@ -445,7 +477,7 @@ function Inventory() {
             <TableBody>
               {isLoading && (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground">
+                  <TableCell colSpan={9} className="text-center text-muted-foreground">
                     Loading…
                   </TableCell>
                 </TableRow>
@@ -456,10 +488,8 @@ function Inventory() {
                   className="cursor-pointer"
                   onClick={() => navigate({ to: "/app/inventory/$medicineId", params: { medicineId: String(m.id) } })}
                 >
-                  <TableCell>
-                    <div className="font-medium">{m.name}</div>
-                    {m.pack && <div className="text-xs font-normal text-muted-foreground">{m.pack}</div>}
-                  </TableCell>
+                  <TableCell className="font-medium">{m.name}</TableCell>
+                  <TableCell className="text-muted-foreground">{m.pack || "—"}</TableCell>
                   <TableCell>
                     {m.primaryBatchNo ? (
                       <span className="inline-flex items-center gap-1">

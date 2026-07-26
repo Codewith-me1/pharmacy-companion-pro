@@ -157,11 +157,14 @@ async function buildDraftFromExtraction(db: ReturnType<typeof getDb>, extracted:
       if (seenBatches.has(key)) flags.push("duplicate_batch");
       seenBatches.add(key);
 
+      const pack = item.pack ?? existingMedicine?.pack ?? null;
       return {
         medicineId: existingMedicine?.id ?? null,
-        medicineNameRaw: item.medicineName,
-        pack: item.pack ?? existingMedicine?.pack ?? null,
-        batchNo: item.batchNumber ?? null,
+        // Medicine name, pack and batch number are always upper-case for consistent display and
+        // matching, regardless of how the source invoice/photo capitalized them.
+        medicineNameRaw: item.medicineName.toUpperCase(),
+        pack: pack?.toUpperCase() ?? null,
+        batchNo: item.batchNumber?.toUpperCase() ?? null,
         expiryDate,
         manufactureDate: normalizeExpiry(item.manufactureDate),
         hsnCode: item.hsnCode ?? existingMedicine?.hsnCode ?? null,
@@ -422,7 +425,15 @@ export const savePurchase = createServerFn({ method: "POST" })
         })
         .returning();
 
-      for (const item of data.items) {
+      for (const rawItem of data.items) {
+        // Defensive normalization here too — a manually-added or manually-edited line item may
+        // not have gone through buildDraftFromExtraction's upper-casing.
+        const item = {
+          ...rawItem,
+          medicineNameRaw: rawItem.medicineNameRaw.toUpperCase(),
+          pack: rawItem.pack?.toUpperCase() ?? rawItem.pack,
+          batchNo: rawItem.batchNo?.toUpperCase() ?? rawItem.batchNo,
+        };
         let medicineId = item.medicineId;
         if (!medicineId) {
           const inserted = await db
