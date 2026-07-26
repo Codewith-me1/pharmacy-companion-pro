@@ -1,17 +1,26 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Download, IndianRupee, Search, Truck } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { AlertTriangle, Download, IndianRupee, Plus, Search, SearchCheck, Truck } from "lucide-react";
 import { getExpiryDashboard } from "@/lib/api/expiry.functions";
 import { getBusinessSettings } from "@/lib/api/business-settings.functions";
+import { listMedicines } from "@/lib/api/medicines.functions";
+import { listSuppliers } from "@/lib/api/suppliers.functions";
+import { createBatch } from "@/lib/api/stock.functions";
 import { printSupplierReturnReport } from "@/lib/print-supplier-report";
 import { StatCard } from "@/components/stat-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { formatDate, formatInr } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -33,10 +42,57 @@ function matchesSearch(row: { medicineName: string; batchNo: string; supplierNam
   );
 }
 
+const emptyExpiryForm = {
+  medicineId: undefined as number | undefined,
+  medicineLabel: "",
+  batchNo: "",
+  quantity: 0,
+  expiryDate: "",
+  manufactureDate: "",
+  purchasePrice: 0,
+  mrp: 0,
+  supplierId: undefined as number | undefined,
+};
+
 function ExpiryPage() {
   const { data, isLoading } = useExpiryData();
   const { data: business } = useQuery({ queryKey: ["business-settings"], queryFn: () => getBusinessSettings() });
+  const { data: suppliers } = useQuery({ queryKey: ["suppliers"], queryFn: () => listSuppliers() });
   const [search, setSearch] = useState("");
+  const queryClient = useQueryClient();
+
+  const [addOpen, setAddOpen] = useState(false);
+  const [medicinePickerOpen, setMedicinePickerOpen] = useState(false);
+  const [medicineSearch, setMedicineSearch] = useState("");
+  const [form, setForm] = useState(emptyExpiryForm);
+  const { data: medicineResults } = useQuery({
+    queryKey: ["medicines", medicineSearch],
+    queryFn: () => listMedicines({ data: { search: medicineSearch } }),
+    enabled: medicinePickerOpen,
+  });
+
+  const addExpiryMutation = useMutation({
+    mutationFn: () =>
+      createBatch({
+        data: {
+          medicineId: form.medicineId!,
+          batchNo: form.batchNo,
+          expiryDate: form.expiryDate,
+          manufactureDate: form.manufactureDate || undefined,
+          quantity: form.quantity,
+          purchasePrice: form.purchasePrice,
+          mrp: form.mrp,
+          supplierId: form.supplierId,
+        },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["expiry-dashboard"] });
+      toast.success("Batch added to expiry tracking.");
+      setAddOpen(false);
+      setForm(emptyExpiryForm);
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to add batch."),
+  });
 
   if (isLoading || !data) {
     return <div className="text-sm text-muted-foreground">Loading expiry dashboard…</div>;
@@ -53,9 +109,157 @@ function ExpiryPage() {
           <h1 className="text-xl font-bold">Expiry Management</h1>
           <p className="text-sm text-muted-foreground">Stay ahead of expiring stock and minimise write-offs.</p>
         </div>
-        <Button variant="outline" onClick={() => window.print()}>
-          Print Expiry Report
-        </Button>
+        <div className="flex gap-2">
+          <Dialog
+            open={addOpen}
+            onOpenChange={(open) => {
+              setAddOpen(open);
+              if (!open) {
+                setForm(emptyExpiryForm);
+                setMedicineSearch("");
+              }
+            }}
+          >
+            <Button onClick={() => setAddOpen(true)}>
+              <Plus className="h-4 w-4" /> Add Expiry Entry
+            </Button>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Expiry / Batch Entry</DialogTitle>
+              </DialogHeader>
+              <p className="text-xs text-muted-foreground">
+                Use this when stock that was never entered into the system turns up expired (or close to
+                it) — e.g. records kept only on paper, or a batch sold right on its expiry day that never
+                matched what's here. This creates the batch directly; the expiry date can be in the past.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2 flex flex-col gap-1">
+                  <Label className="text-xs text-muted-foreground">Medicine</Label>
+                  <Popover open={medicinePickerOpen} onOpenChange={setMedicinePickerOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        role="combobox"
+                        className="w-full justify-start gap-2 font-normal text-muted-foreground"
+                      >
+                        <SearchCheck className="h-4 w-4" />
+                        {form.medicineLabel || "Search medicine by name…"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                      <Command shouldFilter={false}>
+                        <CommandInput
+                          placeholder="Type a medicine name…"
+                          value={medicineSearch}
+                          onValueChange={setMedicineSearch}
+                        />
+                        <CommandList>
+                          <CommandEmpty>No medicine matched.</CommandEmpty>
+                          <CommandGroup>
+                            {medicineResults?.map((m) => (
+                              <CommandItem
+                                key={m.id}
+                                value={String(m.id)}
+                                onSelect={() => {
+                                  setForm((f) => ({
+                                    ...f,
+                                    medicineId: m.id,
+                                    medicineLabel: m.pack ? `${m.name} (${m.pack})` : m.name,
+                                    purchasePrice: m.purchasePrice,
+                                    mrp: m.mrp,
+                                  }));
+                                  setMedicinePickerOpen(false);
+                                }}
+                              >
+                                <div className="flex flex-col">
+                                  <span className="font-medium">{m.name}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {[m.pack, m.company].filter(Boolean).join(" · ") || "—"}
+                                  </span>
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <F label="Batch Number">
+                  <Input value={form.batchNo} onChange={(e) => setForm({ ...form, batchNo: e.target.value })} />
+                </F>
+                <F label="Quantity">
+                  <Input
+                    type="number"
+                    placeholder="0"
+                    value={form.quantity || ""}
+                    onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })}
+                  />
+                </F>
+                <F label="Expiry Date">
+                  <Input
+                    type="date"
+                    value={form.expiryDate}
+                    onChange={(e) => setForm({ ...form, expiryDate: e.target.value })}
+                  />
+                </F>
+                <F label="Manufacture Date (optional)">
+                  <Input
+                    type="date"
+                    value={form.manufactureDate}
+                    onChange={(e) => setForm({ ...form, manufactureDate: e.target.value })}
+                  />
+                </F>
+                <F label="Purchase Price">
+                  <Input
+                    type="number"
+                    placeholder="0"
+                    value={form.purchasePrice || ""}
+                    onChange={(e) => setForm({ ...form, purchasePrice: Number(e.target.value) })}
+                  />
+                </F>
+                <F label="MRP">
+                  <Input
+                    type="number"
+                    placeholder="0"
+                    value={form.mrp || ""}
+                    onChange={(e) => setForm({ ...form, mrp: Number(e.target.value) })}
+                  />
+                </F>
+                <F label="Supplier">
+                  <Select
+                    value={form.supplierId?.toString() ?? "none"}
+                    onValueChange={(v) => setForm({ ...form, supplierId: v === "none" ? undefined : Number(v) })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select supplier" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No supplier</SelectItem>
+                      {suppliers?.map((s) => (
+                        <SelectItem key={s.id} value={s.id.toString()}>
+                          {s.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </F>
+              </div>
+              <DialogFooter>
+                <Button
+                  onClick={() => addExpiryMutation.mutate()}
+                  disabled={!form.medicineId || !form.batchNo || !form.expiryDate || addExpiryMutation.isPending}
+                >
+                  Add Entry
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <Button variant="outline" onClick={() => window.print()}>
+            Print Expiry Report
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
@@ -209,6 +413,15 @@ function ExpiryPage() {
           </div>
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+function F({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <Label className="text-xs text-muted-foreground">{label}</Label>
+      {children}
     </div>
   );
 }

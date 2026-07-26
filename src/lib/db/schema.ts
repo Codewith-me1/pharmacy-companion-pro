@@ -174,6 +174,14 @@ export const sales = pgTable("sales", {
   ownerId: ownerId(),
   customerId: integer("customer_id").references(() => customers.id),
   doctorId: integer("doctor_id").references(() => doctors.id),
+  // Free-text name as typed at billing time — the primary way a doctor/customer is captured (no
+  // need to first create a Customer/Doctor record). customerId/doctorId above stay optional,
+  // set only when the cashier explicitly links an existing record (for credit/loyalty tracking).
+  customerName: text("customer_name"),
+  doctorName: text("doctor_name"),
+  // Shown on the bill in place of the doctor's name when no doctor was given, but a hospital was
+  // (some invoices are referred by a hospital rather than a specific doctor).
+  hospitalName: text("hospital_name"),
   billNumber: text("bill_number").notNull(),
   billType: text("bill_type").notNull().default("retail"), // retail|gst|wholesale|estimate|quotation|credit
   subtotal: doublePrecision("subtotal").notNull().default(0),

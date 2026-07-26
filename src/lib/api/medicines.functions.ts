@@ -6,11 +6,14 @@ import { withTenant } from "../db/tenant.server";
 import { requireUserId } from "../auth/require-user.server";
 
 export const listMedicines = createServerFn({ method: "GET" })
-  .inputValidator(z.object({ search: z.string().optional() }).optional())
+  .inputValidator(
+    z.object({ search: z.string().optional(), batchSearch: z.string().optional(), supplierId: z.number().optional() }).optional(),
+  )
   .handler(async ({ data }) => {
     const userId = await requireUserId();
     return withTenant(userId, async (db) => {
       const search = data?.search?.trim();
+      const batchSearch = data?.batchSearch?.trim();
       const rows = await db
         .select({
           id: medicines.id,
@@ -42,13 +45,21 @@ export const listMedicines = createServerFn({ method: "GET" })
         .from(medicines)
         .leftJoin(batches, eq(batches.medicineId, medicines.id))
         .where(
-          search
-            ? or(
-                ilike(medicines.name, `%${search}%`),
-                ilike(medicines.company, `%${search}%`),
-                ilike(medicines.barcode, `%${search}%`),
-              )
-            : undefined,
+          and(
+            search
+              ? or(
+                  ilike(medicines.name, `%${search}%`),
+                  ilike(medicines.company, `%${search}%`),
+                  ilike(medicines.barcode, `%${search}%`),
+                )
+              : undefined,
+            batchSearch
+              ? sql`exists (select 1 from ${batches} where ${batches.medicineId} = ${medicines.id} and ${batches.batchNo} ilike ${`%${batchSearch}%`})`
+              : undefined,
+            data?.supplierId
+              ? sql`exists (select 1 from ${batches} where ${batches.medicineId} = ${medicines.id} and ${batches.supplierId} = ${data.supplierId})`
+              : undefined,
+          ),
         )
         .groupBy(medicines.id)
         .orderBy(asc(medicines.name));

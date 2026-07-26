@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Camera, ImagePlus, Loader2, Mail, ScanLine, Trash2, Video } from "lucide-react";
+import { Camera, ImagePlus, Loader2, Mail, Plus, ScanLine, SearchCheck, SquarePen, Trash2 } from "lucide-react";
 import { extractInvoice, savePurchase } from "@/lib/api/purchases.functions";
+import { listMedicines } from "@/lib/api/medicines.functions";
 import { fileToBase64 } from "@/lib/file-to-base64";
 import { pdfToImageBlob } from "@/lib/pdf-to-image";
 import { enhanceInvoiceImage } from "@/lib/enhance-image";
-import { WebcamCapture } from "@/components/webcam-capture";
 import { FetchEmailDialog } from "@/components/fetch-email-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +15,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/app/purchases/new")({
@@ -33,16 +36,80 @@ const FLAG_LABELS: Record<string, string> = {
   possible_duplicate_data: "Check vs photo — looks copied",
 };
 
+const emptyDraft: Draft = {
+  supplier: { id: null, name: "", gstNumber: "", dlNo: "", address: "" },
+  invoiceNumber: "",
+  serialNumber: "",
+  invoiceDate: "",
+  billNumber: "",
+  invoiceTotal: 0,
+  netAmount: 0,
+  taxAmount: 0,
+  items: [],
+  overallConfidence: 1,
+};
+
 function NewPurchase() {
   const navigate = useNavigate();
   const [step, setStep] = useState<"capture" | "converting" | "enhancing" | "extracting" | "review">("capture");
-  const [showWebcam, setShowWebcam] = useState(false);
   const [showEmailDialog, setShowEmailDialog] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [sourceLabel, setSourceLabel] = useState<"camera" | "webcam" | "pdf" | "scanner" | "email">("camera");
+  const [sourceLabel, setSourceLabel] = useState<"camera" | "pdf" | "email" | "manual">("camera");
   const [saving, setSaving] = useState(false);
+  const [addItemOpen, setAddItemOpen] = useState(false);
+  const [medicineSearch, setMedicineSearch] = useState("");
+  const { data: medicineResults } = useQuery({
+    queryKey: ["medicines", medicineSearch],
+    queryFn: () => listMedicines({ data: { search: medicineSearch } }),
+    enabled: addItemOpen,
+  });
 
-  async function processBase64(base64: string, mimeType: string, source: typeof sourceLabel) {
+  function startManualEntry() {
+    setSourceLabel("manual");
+    setDraft(emptyDraft);
+    setStep("review");
+  }
+
+  function addManualItem(m: NonNullable<typeof medicineResults>[number]) {
+    setDraft((d) => {
+      const base = d ?? emptyDraft;
+      return {
+        ...base,
+        items: [
+          ...base.items,
+          {
+            medicineId: m.id,
+            medicineNameRaw: m.name,
+            pack: m.pack,
+            batchNo: null,
+            expiryDate: null,
+            manufactureDate: null,
+            hsnCode: m.hsnCode,
+            mrp: m.mrp,
+            ptr: 0,
+            pts: 0,
+            purchasePrice: m.purchasePrice,
+            sellingPrice: m.sellingPrice,
+            gstPercent: m.gstPercent,
+            cgst: 0,
+            sgst: 0,
+            igst: 0,
+            discount: 0,
+            scheme: null,
+            freeQty: 0,
+            quantity: 0,
+            confidence: 1,
+            flags: [],
+          },
+        ],
+      };
+    });
+    setAddItemOpen(false);
+    setMedicineSearch("");
+    if (step !== "review") setStep("review");
+  }
+
+  async function processBase64(base64: string, mimeType: string, source: "camera" | "pdf" | "email") {
     setSourceLabel(source);
     setStep("enhancing");
     const enhanced = await enhanceInvoiceImage(base64, mimeType);
@@ -60,12 +127,12 @@ function NewPurchase() {
     }
   }
 
-  async function processFile(file: Blob, source: typeof sourceLabel) {
+  async function processFile(file: Blob, source: "camera" | "pdf" | "email") {
     const { base64, mimeType } = await fileToBase64(file);
     await processBase64(base64, mimeType, source);
   }
 
-  async function processMaybePdf(file: File, source: typeof sourceLabel) {
+  async function processMaybePdf(file: File, source: "camera" | "pdf" | "email") {
     if (file.type !== "application/pdf") {
       await processFile(file, source);
       return;
@@ -126,7 +193,8 @@ function NewPurchase() {
       <div>
         <h1 className="text-xl font-bold">Purchase Entry — AI Powered</h1>
         <p className="text-sm text-muted-foreground">
-          Snap a photo of a supplier invoice and let AI fill in the details. Verify before saving.
+          Snap a photo of a supplier invoice and let AI fill in the details, or add items manually. Verify before
+          saving.
         </p>
       </div>
 
@@ -137,7 +205,7 @@ function NewPurchase() {
             <p className="text-center text-sm text-muted-foreground">
               Choose how you'd like to capture the invoice
             </p>
-            <div className="grid w-full max-w-3xl grid-cols-2 gap-3 sm:grid-cols-5">
+            <div className="grid w-full max-w-2xl grid-cols-2 gap-3 sm:grid-cols-4">
               <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-border p-4 text-sm hover:bg-accent">
                 <Camera className="h-5 w-5" />
                 Mobile Camera
@@ -149,13 +217,6 @@ function NewPurchase() {
                   onChange={(e) => e.target.files?.[0] && processFile(e.target.files[0], "camera")}
                 />
               </label>
-              <button
-                className="flex flex-col items-center gap-2 rounded-lg border border-border p-4 text-sm hover:bg-accent"
-                onClick={() => setShowWebcam(true)}
-              >
-                <Video className="h-5 w-5" />
-                Webcam
-              </button>
               <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-border p-4 text-sm hover:bg-accent">
                 <ImagePlus className="h-5 w-5" />
                 PDF Upload
@@ -166,16 +227,13 @@ function NewPurchase() {
                   onChange={(e) => e.target.files?.[0] && processMaybePdf(e.target.files[0], "pdf")}
                 />
               </label>
-              <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-border p-4 text-sm hover:bg-accent">
-                <ScanLine className="h-5 w-5" />
-                Scanner Upload
-                <input
-                  type="file"
-                  accept="image/*,.pdf,application/pdf"
-                  className="hidden"
-                  onChange={(e) => e.target.files?.[0] && processMaybePdf(e.target.files[0], "scanner")}
-                />
-              </label>
+              <button
+                className="flex flex-col items-center gap-2 rounded-lg border border-border p-4 text-sm hover:bg-accent"
+                onClick={startManualEntry}
+              >
+                <SquarePen className="h-5 w-5" />
+                Manual Entry
+              </button>
               <button
                 className="flex flex-col items-center gap-2 rounded-lg border border-border p-4 text-sm hover:bg-accent"
                 onClick={() => setShowEmailDialog(true)}
@@ -295,10 +353,46 @@ function NewPurchase() {
           </Card>
 
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
               <CardTitle className="text-sm">
                 Line Items ({draft.items.length}) · Overall confidence {Math.round(draft.overallConfidence * 100)}%
               </CardTitle>
+              <Popover open={addItemOpen} onOpenChange={setAddItemOpen}>
+                <PopoverTrigger asChild>
+                  <Button size="sm" variant="outline">
+                    <Plus className="h-4 w-4" /> Add Item
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-80 p-0" align="end">
+                  <Command shouldFilter={false}>
+                    <CommandInput
+                      placeholder="Type a medicine name…"
+                      value={medicineSearch}
+                      onValueChange={setMedicineSearch}
+                    />
+                    <CommandList>
+                      <CommandEmpty>
+                        {medicineSearch ? "No medicine matched." : "Start typing to search medicines…"}
+                      </CommandEmpty>
+                      <CommandGroup>
+                        {medicineResults?.map((m) => (
+                          <CommandItem key={m.id} value={String(m.id)} onSelect={() => addManualItem(m)}>
+                            <div className="flex flex-1 items-center justify-between gap-2">
+                              <div className="flex flex-col">
+                                <span className="font-medium">{m.name}</span>
+                                <span className="text-xs text-muted-foreground">
+                                  {[m.pack, m.company].filter(Boolean).join(" · ") || "—"}
+                                </span>
+                              </div>
+                              <SearchCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </CardHeader>
             <CardContent>
               <Table>
@@ -321,6 +415,13 @@ function NewPurchase() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
+                  {draft.items.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={14} className="p-8 text-center text-muted-foreground">
+                        No line items yet. Use "Add Item" to search for a medicine and add it manually.
+                      </TableCell>
+                    </TableRow>
+                  )}
                   {draft.items.map((item, i) => (
                     <TableRow
                       key={i}
@@ -432,16 +533,6 @@ function NewPurchase() {
             </Button>
           </div>
         </div>
-      )}
-
-      {showWebcam && (
-        <WebcamCapture
-          onClose={() => setShowWebcam(false)}
-          onCapture={(blob) => {
-            setShowWebcam(false);
-            processFile(blob, "webcam");
-          }}
-        />
       )}
 
       <FetchEmailDialog

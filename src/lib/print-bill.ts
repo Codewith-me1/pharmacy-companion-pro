@@ -50,6 +50,7 @@ export type PrintBillData = {
   customerName?: string | null;
   customerAddress?: string | null;
   doctorName?: string | null;
+  hospitalName?: string | null;
   items: PrintBillItem[];
   discount: number;
   settings?: BillCustomization | null;
@@ -70,6 +71,14 @@ function formatExpiry(value?: string | null) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const year = String(date.getFullYear()).slice(-2);
   return `${month}/${year}`;
+}
+
+// Doctor takes precedence when both are given — a hospital name is only shown as a fallback for
+// bills that were referred by an institution rather than a specific doctor.
+function referrerLine(bill: PrintBillData): string {
+  if (bill.doctorName) return `<strong>Prescribed by Dr:</strong> Dr. ${esc(bill.doctorName)}`;
+  if (bill.hospitalName) return `<strong>Referred by:</strong> ${esc(bill.hospitalName)}`;
+  return `<strong>Prescribed by Dr:</strong> —`;
 }
 
 type Col = { header: string; align: "left" | "center" | "right"; cell: (item: PrintBillItem, i: number) => string };
@@ -158,7 +167,7 @@ function renderCopy(bill: PrintBillData, label: "Original Copy" | "Duplicate Cop
         <td><strong>Invoice No:</strong> ${esc(bill.billNumber)}</td>
       </tr>
       <tr>
-        <td>${settings.showDoctor ? `<strong>Prescribed by Dr:</strong> ${bill.doctorName ? `Dr. ${esc(bill.doctorName)}` : "—"}` : ""}</td>
+        <td>${settings.showDoctor ? referrerLine(bill) : ""}</td>
         <td><strong>Date:</strong> ${esc(bill.createdAt)}</td>
       </tr>
     </table>

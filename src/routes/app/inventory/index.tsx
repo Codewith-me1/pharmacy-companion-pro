@@ -67,6 +67,8 @@ function Inventory() {
   const { q } = Route.useSearch();
   const [search, setSearch] = useState(q);
   useEffect(() => setSearch(q), [q]);
+  const [batchSearch, setBatchSearch] = useState("");
+  const [supplierFilter, setSupplierFilter] = useState<number | undefined>(undefined);
   const [addOpen, setAddOpen] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -76,8 +78,8 @@ function Inventory() {
   const navigate = useNavigate();
 
   const { data, isLoading } = useQuery({
-    queryKey: ["medicines", search],
-    queryFn: () => listMedicines({ data: { search } }),
+    queryKey: ["medicines", search, batchSearch, supplierFilter],
+    queryFn: () => listMedicines({ data: { search, batchSearch, supplierId: supplierFilter } }),
   });
   const { data: suppliers } = useQuery({ queryKey: ["suppliers"], queryFn: () => listSuppliers() });
 
@@ -388,14 +390,41 @@ function Inventory() {
         </Dialog>
       </div>
 
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          className="pl-9"
-          placeholder="Search by medicine, company, or barcode…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+      <div className="flex flex-wrap gap-3">
+        <div className="relative max-w-md flex-1 basis-64">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="pl-9"
+            placeholder="Search by medicine, company, or barcode…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="relative max-w-xs flex-1 basis-48">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="pl-9"
+            placeholder="Search by batch number…"
+            value={batchSearch}
+            onChange={(e) => setBatchSearch(e.target.value)}
+          />
+        </div>
+        <Select
+          value={supplierFilter?.toString() ?? "all"}
+          onValueChange={(v) => setSupplierFilter(v === "all" ? undefined : Number(v))}
+        >
+          <SelectTrigger className="max-w-xs flex-1 basis-48">
+            <SelectValue placeholder="All suppliers" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All suppliers</SelectItem>
+            {suppliers?.map((s) => (
+              <SelectItem key={s.id} value={s.id.toString()}>
+                {s.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <Card>

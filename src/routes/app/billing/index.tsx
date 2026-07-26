@@ -124,6 +124,7 @@ function BillingPage() {
         customerName: result.sale.customerName,
         customerAddress: result.sale.customerAddress,
         doctorName: result.sale.doctorName,
+        hospitalName: result.sale.hospitalName,
         items: result.items.map((i) => ({
           medicineName: i.medicineName,
           pack: i.pack,

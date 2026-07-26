@@ -6,7 +6,7 @@ import { Barcode, Dices, Plus, Printer, Search, ShoppingCart, Trash2 } from "luc
 import { listMedicines, searchMedicineBatches } from "@/lib/api/medicines.functions";
 import { listBatchesForMedicine } from "@/lib/api/stock.functions";
 import { listDoctors, getDoctorWithMedicines } from "@/lib/api/doctors.functions";
-import { listCustomers, upsertCustomer } from "@/lib/api/customers.functions";
+import { listCustomers } from "@/lib/api/customers.functions";
 import { createSale } from "@/lib/api/sales.functions";
 import { getBusinessSettings } from "@/lib/api/business-settings.functions";
 import { getBillSettings } from "@/lib/api/bill-settings.functions";
@@ -62,7 +62,14 @@ function SalesPos() {
   const [barcode, setBarcode] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
   const [customerId, setCustomerId] = useState<number | null>(null);
+  const [customerName, setCustomerName] = useState(() => generateRandomCustomerName());
+  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
+  const customerBoxRef = useRef<HTMLDivElement>(null);
   const [doctorId, setDoctorId] = useState<number | null>(null);
+  const [doctorName, setDoctorName] = useState("");
+  const [doctorPickerOpen, setDoctorPickerOpen] = useState(false);
+  const doctorBoxRef = useRef<HTMLDivElement>(null);
+  const [hospitalName, setHospitalName] = useState("");
   const [billType, setBillType] = useState<"retail" | "gst" | "wholesale" | "estimate" | "quotation" | "credit">("retail");
   const [paymentMode, setPaymentMode] = useState<"cash" | "upi" | "card" | "credit" | "split">("cash");
   const [discount, setDiscount] = useState(0);
@@ -74,17 +81,25 @@ function SalesPos() {
     defaultQty: number;
     batches: BatchOption[];
   } | null>(null);
-  const [showNewCustomer, setShowNewCustomer] = useState(true);
-  const [newCustomerName, setNewCustomerName] = useState(() => generateRandomCustomerName());
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (searchBoxRef.current && !searchBoxRef.current.contains(e.target as Node)) {
         setSearchOpen(false);
       }
+      if (customerBoxRef.current && !customerBoxRef.current.contains(e.target as Node)) {
+        setCustomerPickerOpen(false);
+      }
+      if (doctorBoxRef.current && !doctorBoxRef.current.contains(e.target as Node)) {
+        setDoctorPickerOpen(false);
+      }
     }
     function handleEscape(e: KeyboardEvent) {
-      if (e.key === "Escape") setSearchOpen(false);
+      if (e.key === "Escape") {
+        setSearchOpen(false);
+        setCustomerPickerOpen(false);
+        setDoctorPickerOpen(false);
+      }
     }
     document.addEventListener("mousedown", handleClickOutside);
     document.addEventListener("keydown", handleEscape);
@@ -163,18 +178,6 @@ function SalesPos() {
     setBatchPicker({ medicineId, medicineName, pack, defaultQty, batches: available });
   }
 
-  const createCustomerMutation = useMutation({
-    mutationFn: () => upsertCustomer({ data: { name: newCustomerName.trim() } }),
-    onSuccess: async (result) => {
-      await queryClient.invalidateQueries({ queryKey: ["customers"] });
-      setCustomerId(result.id);
-      setNewCustomerName("");
-      setShowNewCustomer(false);
-      toast.success("Customer added.");
-    },
-    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to add customer."),
-  });
-
   function updateLine(key: string, patch: Partial<CartLine>) {
     setCart((c) => c.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   }
@@ -193,6 +196,9 @@ function SalesPos() {
         data: {
           customerId,
           doctorId,
+          customerName: customerName.trim() || undefined,
+          doctorName: doctorName.trim() || undefined,
+          hospitalName: hospitalName.trim() || undefined,
           billType,
           paymentMode,
           discount,
@@ -218,9 +224,10 @@ function SalesPos() {
         gstNumber: business?.gstNumber,
         phone: business?.mobile,
         address: business?.address,
-        customerName: customers?.find((c) => c.id === customerId)?.name ?? null,
+        customerName: customerName.trim() || null,
         customerAddress: customers?.find((c) => c.id === customerId)?.address ?? null,
-        doctorName: doctors?.find((d) => d.id === doctorId)?.name ?? null,
+        doctorName: doctorName.trim() || null,
+        hospitalName: hospitalName.trim() || null,
         items: cart.map((l) => ({
           medicineName: l.medicineName,
           pack: l.pack,
@@ -236,8 +243,10 @@ function SalesPos() {
       setCart([]);
       setDiscount(0);
       setCustomerId(null);
-      setShowNewCustomer(true);
-      setNewCustomerName(generateRandomCustomerName());
+      setCustomerName(generateRandomCustomerName());
+      setDoctorId(null);
+      setDoctorName("");
+      setHospitalName("");
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to create sale."),
@@ -432,77 +441,98 @@ function SalesPos() {
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <div className="flex flex-col gap-1">
-              <Label className="text-xs text-muted-foreground">Doctor (optional)</Label>
-              <Select value={doctorId?.toString() ?? "none"} onValueChange={(v) => setDoctorId(v === "none" ? null : Number(v))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="No doctor" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No doctor</SelectItem>
-                  {doctors?.map((d) => (
-                    <SelectItem key={d.id} value={d.id.toString()}>
-                      Dr. {d.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label className="text-xs text-muted-foreground">Customer (optional — blank prints "Walk-in Customer")</Label>
+              <div className="relative flex gap-2" ref={customerBoxRef}>
+                <Input
+                  placeholder="Type customer name…"
+                  value={customerName}
+                  onFocus={() => setCustomerPickerOpen(true)}
+                  onChange={(e) => {
+                    setCustomerName(e.target.value);
+                    setCustomerId(null);
+                    setCustomerPickerOpen(true);
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  title="Generate a random name"
+                  onClick={() => {
+                    setCustomerName(generateRandomCustomerName());
+                    setCustomerId(null);
+                  }}
+                >
+                  <Dices className="h-4 w-4" />
+                </Button>
+                {customerPickerOpen && customerName.trim() && (
+                  <div className="absolute left-0 top-full z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-md border border-border bg-popover shadow-lg">
+                    {customers
+                      ?.filter((c) => c.name.toLowerCase().includes(customerName.trim().toLowerCase()))
+                      .slice(0, 6)
+                      .map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          className="block w-full border-b border-border/50 px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent"
+                          onClick={() => {
+                            setCustomerId(c.id);
+                            setCustomerName(c.name);
+                            setCustomerPickerOpen(false);
+                          }}
+                        >
+                          {c.name}
+                          {c.phone && <span className="ml-1 text-xs text-muted-foreground">· {c.phone}</span>}
+                        </button>
+                      ))}
+                  </div>
+                )}
+              </div>
             </div>
             <div className="flex flex-col gap-1">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs text-muted-foreground">Customer</Label>
-                <button
-                  type="button"
-                  className="text-xs font-medium text-primary hover:underline"
-                  onClick={() =>
-                    setShowNewCustomer((v) => {
-                      const next = !v;
-                      if (next && !newCustomerName.trim()) setNewCustomerName(generateRandomCustomerName());
-                      return next;
-                    })
-                  }
-                >
-                  {showNewCustomer ? "Cancel" : "+ New"}
-                </button>
+              <Label className="text-xs text-muted-foreground">Doctor Name (optional)</Label>
+              <div className="relative" ref={doctorBoxRef}>
+                <Input
+                  placeholder="Type doctor's name…"
+                  value={doctorName}
+                  onFocus={() => setDoctorPickerOpen(true)}
+                  onChange={(e) => {
+                    setDoctorName(e.target.value);
+                    setDoctorId(null);
+                    setDoctorPickerOpen(true);
+                  }}
+                />
+                {doctorPickerOpen && doctorName.trim() && (
+                  <div className="absolute left-0 top-full z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-md border border-border bg-popover shadow-lg">
+                    {doctors
+                      ?.filter((d) => d.name.toLowerCase().includes(doctorName.trim().toLowerCase()))
+                      .slice(0, 6)
+                      .map((d) => (
+                        <button
+                          key={d.id}
+                          type="button"
+                          className="block w-full border-b border-border/50 px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent"
+                          onClick={() => {
+                            setDoctorId(d.id);
+                            setDoctorName(d.name);
+                            setDoctorPickerOpen(false);
+                          }}
+                        >
+                          Dr. {d.name}
+                          {d.hospital && <span className="ml-1 text-xs text-muted-foreground">· {d.hospital}</span>}
+                        </button>
+                      ))}
+                  </div>
+                )}
               </div>
-              {showNewCustomer ? (
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="Customer name"
-                    value={newCustomerName}
-                    onChange={(e) => setNewCustomerName(e.target.value)}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    title="Generate a random name"
-                    onClick={() => setNewCustomerName(generateRandomCustomerName())}
-                  >
-                    <Dices className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    type="button"
-                    disabled={!newCustomerName.trim() || createCustomerMutation.isPending}
-                    onClick={() => createCustomerMutation.mutate()}
-                  >
-                    Add
-                  </Button>
-                </div>
-              ) : (
-                <Select value={customerId?.toString() ?? "none"} onValueChange={(v) => setCustomerId(v === "none" ? null : Number(v))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Walk-in customer" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Walk-in customer</SelectItem>
-                    {customers?.map((c) => (
-                      <SelectItem key={c.id} value={c.id.toString()}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs text-muted-foreground">Hospital Name (optional — used if no doctor is given)</Label>
+              <Input
+                placeholder="Type hospital / referring institution…"
+                value={hospitalName}
+                onChange={(e) => setHospitalName(e.target.value)}
+              />
             </div>
             <div className="flex flex-col gap-1">
               <Label className="text-xs text-muted-foreground">Bill Type</Label>
@@ -574,8 +604,12 @@ function SalesPos() {
                 {lastBill.address && <p>{lastBill.address}</p>}
                 {lastBill.phone && <p>Phone: {lastBill.phone}</p>}
               </div>
-              {lastBill.customerName && <p className="text-muted-foreground">Customer: {lastBill.customerName}</p>}
-              {lastBill.doctorName && <p className="text-muted-foreground">Doctor: Dr. {lastBill.doctorName}</p>}
+              <p className="text-muted-foreground">Customer: {lastBill.customerName || "Walk-in Customer"}</p>
+              {lastBill.doctorName ? (
+                <p className="text-muted-foreground">Doctor: Dr. {lastBill.doctorName}</p>
+              ) : (
+                lastBill.hospitalName && <p className="text-muted-foreground">Hospital: {lastBill.hospitalName}</p>
+              )}
               <ul className="max-h-40 overflow-y-auto rounded-md border border-border p-2 text-xs">
                 {lastBill.items.map((item, i) => (
                   <li key={i} className="flex justify-between py-0.5">

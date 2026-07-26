@@ -26,6 +26,12 @@ export const createSale = createServerFn({ method: "POST" })
     z.object({
       customerId: z.number().nullable().optional(),
       doctorId: z.number().nullable().optional(),
+      // Free text as typed at billing time — this is what actually prints on the bill (see
+      // print-bill.ts). customerId/doctorId above are only set when an existing record was
+      // explicitly picked, for credit/loyalty/favorites tracking.
+      customerName: z.string().optional(),
+      doctorName: z.string().optional(),
+      hospitalName: z.string().optional(),
       billType: z.enum(["retail", "gst", "wholesale", "estimate", "quotation", "credit"]).default("retail"),
       paymentMode: z.enum(["cash", "upi", "card", "credit", "split"]).default("cash"),
       discount: z.number().default(0),
@@ -55,6 +61,9 @@ export const createSale = createServerFn({ method: "POST" })
         .values({
           customerId: data.customerId ?? null,
           doctorId: data.doctorId ?? null,
+          customerName: data.customerName?.trim() || null,
+          doctorName: data.doctorName?.trim() || null,
+          hospitalName: data.hospitalName?.trim() || null,
           billNumber,
           billType: data.billType,
           subtotal,
@@ -127,7 +136,12 @@ export const listSales = createServerFn({ method: "GET" })
       const search = data?.search?.trim();
       const conditions = [
         search
-          ? or(ilike(sales.billNumber, `%${search}%`), ilike(customers.name, `%${search}%`), ilike(customers.phone, `%${search}%`))
+          ? or(
+              ilike(sales.billNumber, `%${search}%`),
+              ilike(customers.name, `%${search}%`),
+              ilike(customers.phone, `%${search}%`),
+              ilike(sales.customerName, `%${search}%`),
+            )
           : undefined,
         data?.dateFrom ? sql`${sales.createdAt}::date >= ${data.dateFrom}::date` : undefined,
         data?.dateTo ? sql`${sales.createdAt}::date <= ${data.dateTo}::date` : undefined,
@@ -146,7 +160,7 @@ export const listSales = createServerFn({ method: "GET" })
           paymentMode: sales.paymentMode,
           paymentStatus: sales.paymentStatus,
           createdAt: sales.createdAt,
-          customerName: customers.name,
+          customerName: sql<string | null>`coalesce(${sales.customerName}, ${customers.name})`,
           customerPhone: customers.phone,
         })
         .from(sales)
@@ -223,9 +237,10 @@ export const getSale = createServerFn({ method: "GET" })
           paymentMode: sales.paymentMode,
           paymentStatus: sales.paymentStatus,
           createdAt: sales.createdAt,
-          customerName: customers.name,
+          customerName: sql<string | null>`coalesce(${sales.customerName}, ${customers.name})`,
           customerAddress: customers.address,
-          doctorName: doctors.name,
+          doctorName: sql<string | null>`coalesce(${sales.doctorName}, ${doctors.name})`,
+          hospitalName: sales.hospitalName,
         })
         .from(sales)
         .leftJoin(customers, eq(customers.id, sales.customerId))
