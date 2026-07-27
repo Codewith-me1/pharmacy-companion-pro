@@ -2,12 +2,13 @@ import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AlertTriangle, Download, IndianRupee, Plus, Search, SearchCheck, Truck } from "lucide-react";
+import { AlertTriangle, Download, IndianRupee, Pencil, Plus, Search, SearchCheck, Trash2, Truck } from "lucide-react";
 import { getExpiryDashboard } from "@/lib/api/expiry.functions";
 import { getBusinessSettings } from "@/lib/api/business-settings.functions";
 import { listMedicines } from "@/lib/api/medicines.functions";
 import { listSuppliers } from "@/lib/api/suppliers.functions";
 import { createBatch } from "@/lib/api/stock.functions";
+import { BatchEditDialog, DeleteBatchDialog, type EditableBatch } from "@/components/batch-dialogs";
 import { printSupplierReturnReport } from "@/lib/print-supplier-report";
 import { StatCard } from "@/components/stat-card";
 import { Card, CardContent } from "@/components/ui/card";
@@ -94,13 +95,42 @@ function ExpiryPage() {
     onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to add batch."),
   });
 
+  const [editingRow, setEditingRow] = useState<{ medicineId: number; medicineName: string; batch: EditableBatch } | null>(null);
+  const [rowDialogOpen, setRowDialogOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; batchNo: string } | null>(null);
+
   if (isLoading || !data) {
     return <div className="text-sm text-muted-foreground">Loading expiry dashboard…</div>;
+  }
+
+  type ExpiryRow = (typeof data.all)[number];
+
+  function openEditRow(item: ExpiryRow) {
+    setEditingRow({
+      medicineId: item.medicineId,
+      medicineName: item.medicineName,
+      batch: {
+        id: item.id,
+        batchNo: item.batchNo,
+        quantity: item.quantity,
+        expiryDate: item.expiryDate,
+        manufactureDate: item.manufactureDate,
+        purchasePrice: item.purchasePrice,
+        mrp: item.mrp,
+        supplierId: item.supplierId,
+      },
+    });
+    setRowDialogOpen(true);
+  }
+
+  function invalidate() {
+    queryClient.invalidateQueries({ queryKey: ["expiry-dashboard"] });
   }
 
   const filteredBySupplier = data.bySupplier
     .map((s) => ({ ...s, items: s.items.filter((i) => matchesSearch(i, search)) }))
     .filter((s) => s.items.length > 0);
+  const filteredExpired = data.expired.filter((i) => matchesSearch(i, search));
 
   return (
     <div className="flex flex-col gap-6">
@@ -288,6 +318,7 @@ function ExpiryPage() {
 
       <Tabs defaultValue="30">
         <TabsList className="flex-wrap">
+          <TabsTrigger value="expired">Expired ({filteredExpired.length})</TabsTrigger>
           {data.buckets.map((b) => (
             <TabsTrigger key={b.days} value={String(b.days)}>
               {b.days} Days ({b.items.filter((i) => matchesSearch(i, search)).length})
@@ -295,6 +326,53 @@ function ExpiryPage() {
           ))}
           <TabsTrigger value="supplier">By Supplier ({filteredBySupplier.length})</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="expired">
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Medicine</TableHead>
+                    <TableHead>Batch</TableHead>
+                    <TableHead>Supplier</TableHead>
+                    <TableHead>Expiry</TableHead>
+                    <TableHead className="text-right">Days Expired</TableHead>
+                    <TableHead className="text-right">Qty</TableHead>
+                    <TableHead className="text-right">Est. Loss</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredExpired.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={8} className="p-8 text-center text-muted-foreground">
+                        Nothing already expired — or it's already been cleared out.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {filteredExpired.map((item) => (
+                    <TableRow key={item.id} className="bg-destructive/5">
+                      <TableCell className="font-medium">{item.medicineName}</TableCell>
+                      <TableCell>{item.batchNo}</TableCell>
+                      <TableCell>{item.supplierName || "—"}</TableCell>
+                      <TableCell>{formatDate(item.expiryDate)}</TableCell>
+                      <TableCell className="text-right">
+                        <Badge variant="destructive">{Math.abs(item.daysToExpiry)}d ago</Badge>
+                      </TableCell>
+                      <TableCell className="text-right">{item.quantity}</TableCell>
+                      <TableCell className="text-right font-mono">{formatInr(item.estimatedLoss)}</TableCell>
+                      <TableCell className="text-right">
+                        <RowActions onEdit={() => openEditRow(item)} onDelete={() => setDeleteTarget({ id: item.id, batchNo: item.batchNo })} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         {data.buckets.map((bucket) => {
           const items = bucket.items.filter((i) => matchesSearch(i, search));
           return (
@@ -311,12 +389,13 @@ function ExpiryPage() {
                         <TableHead className="text-right">Days Left</TableHead>
                         <TableHead className="text-right">Qty</TableHead>
                         <TableHead className="text-right">Est. Loss</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {items.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={7} className="p-8 text-center text-muted-foreground">
+                          <TableCell colSpan={8} className="p-8 text-center text-muted-foreground">
                             Nothing expiring in this window.
                           </TableCell>
                         </TableRow>
@@ -334,6 +413,9 @@ function ExpiryPage() {
                           </TableCell>
                           <TableCell className="text-right">{item.quantity}</TableCell>
                           <TableCell className="text-right font-mono">{formatInr(item.estimatedLoss)}</TableCell>
+                          <TableCell className="text-right">
+                            <RowActions onEdit={() => openEditRow(item)} onDelete={() => setDeleteTarget({ id: item.id, batchNo: item.batchNo })} />
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -396,6 +478,7 @@ function ExpiryPage() {
                         <TableHead>Expiry</TableHead>
                         <TableHead className="text-right">Qty</TableHead>
                         <TableHead className="text-right">MRP</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -406,6 +489,9 @@ function ExpiryPage() {
                           <TableCell>{formatDate(item.expiryDate)}</TableCell>
                           <TableCell className="text-right">{item.quantity}</TableCell>
                           <TableCell className="text-right font-mono">{formatInr(item.mrp)}</TableCell>
+                          <TableCell className="text-right">
+                            <RowActions onEdit={() => openEditRow(item)} onDelete={() => setDeleteTarget({ id: item.id, batchNo: item.batchNo })} />
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -416,6 +502,30 @@ function ExpiryPage() {
           </div>
         </TabsContent>
       </Tabs>
+
+      <BatchEditDialog
+        open={rowDialogOpen}
+        onOpenChange={setRowDialogOpen}
+        medicineId={editingRow?.medicineId ?? 0}
+        medicineLabel={editingRow?.medicineName}
+        batch={editingRow?.batch}
+        suppliers={suppliers}
+        onSaved={invalidate}
+      />
+      <DeleteBatchDialog batch={deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)} onDeleted={invalidate} />
+    </div>
+  );
+}
+
+function RowActions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+  return (
+    <div className="flex justify-end gap-1">
+      <Button variant="ghost" size="icon" onClick={onEdit}>
+        <Pencil className="h-4 w-4" />
+      </Button>
+      <Button variant="ghost" size="icon" onClick={onDelete}>
+        <Trash2 className="h-4 w-4" />
+      </Button>
     </div>
   );
 }

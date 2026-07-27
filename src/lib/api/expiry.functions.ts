@@ -14,6 +14,7 @@ export const getExpiryDashboard = createServerFn({ method: "GET" }).handler(asyn
         id: batches.id,
         batchNo: batches.batchNo,
         expiryDate: batches.expiryDate,
+        manufactureDate: batches.manufactureDate,
         quantity: batches.quantity,
         purchasePrice: batches.purchasePrice,
         mrp: batches.mrp,

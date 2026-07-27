@@ -2,13 +2,15 @@ import { useEffect, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { IndianRupee, ListFilter, Pencil, Pill, Plus, Search, SearchCheck, Trash2 } from "lucide-react";
+import { CalendarClock, IndianRupee, ListFilter, Pencil, Pill, Plus, Search, SearchCheck, Trash2 } from "lucide-react";
 import { listMedicines, upsertMedicine, deleteMedicine, bulkImportMedicines } from "@/lib/api/medicines.functions";
 import { listSuppliers } from "@/lib/api/suppliers.functions";
+import { listBatchesForMedicine } from "@/lib/api/stock.functions";
 import { MEDICINE_CATEGORIES } from "@/lib/medicine-categories";
 import { MEDICINE_CATALOG, type MedicineCatalogItem } from "@/lib/medicine-catalog";
 import { ImportCsvDialog } from "@/components/import-csv-dialog";
 import type { CsvTemplateColumn } from "@/lib/csv";
+import { BatchEditDialog, DeleteBatchDialog, type EditableBatch } from "@/components/batch-dialogs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,7 +39,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { formatInr } from "@/lib/format";
+import { formatDate, formatInr } from "@/lib/format";
 
 export const Route = createFileRoute("/app/inventory/")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -90,6 +92,10 @@ function Inventory() {
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState(emptyMedicine);
+  const [batchesFor, setBatchesFor] = useState<{ id: number; name: string } | null>(null);
+  const [editingBatch, setEditingBatch] = useState<EditableBatch | null>(null);
+  const [batchDialogOpen, setBatchDialogOpen] = useState(false);
+  const [deleteBatchTarget, setDeleteBatchTarget] = useState<{ id: number; batchNo: string } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -99,6 +105,27 @@ function Inventory() {
     queryFn: () => listMedicines({ data: { search, batchSearch, supplierId: supplierFilter } }),
   });
   const { data: suppliers } = useQuery({ queryKey: ["suppliers"], queryFn: () => listSuppliers() });
+  const { data: batchesForMedicine } = useQuery({
+    queryKey: ["batches-for-medicine", batchesFor?.id],
+    queryFn: () => listBatchesForMedicine({ data: { medicineId: batchesFor!.id } }),
+    enabled: batchesFor != null,
+  });
+
+  function invalidateBatches() {
+    queryClient.invalidateQueries({ queryKey: ["batches-for-medicine", batchesFor?.id] });
+    queryClient.invalidateQueries({ queryKey: ["medicines"] });
+    queryClient.invalidateQueries({ queryKey: ["expiry-dashboard"] });
+  }
+
+  function openAddBatchFor() {
+    setEditingBatch(null);
+    setBatchDialogOpen(true);
+  }
+
+  function openEditBatchFor(b: EditableBatch) {
+    setEditingBatch(b);
+    setBatchDialogOpen(true);
+  }
 
   function openAdd() {
     setEditingId(null);
@@ -518,6 +545,17 @@ function Inventory() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        title="View / edit batches &amp; expiry"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setBatchesFor({ id: m.id, name: m.name });
+                        }}
+                      >
+                        <CalendarClock className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={(e) => {
                           e.stopPropagation();
                           openEdit(m);
@@ -561,6 +599,85 @@ function Inventory() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={!!batchesFor} onOpenChange={(open) => !open && setBatchesFor(null)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Batches &amp; Expiry — {batchesFor?.name}</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            Edit or delete a batch here if what's recorded doesn't match what's actually on the shelf — e.g. a
+            different batch was sold than the one the system picked.
+          </p>
+          <div className="flex justify-end">
+            <Button size="sm" onClick={openAddBatchFor}>
+              <Plus className="h-4 w-4" /> Add Batch
+            </Button>
+          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Batch No.</TableHead>
+                <TableHead>Expiry</TableHead>
+                <TableHead className="text-right">Qty</TableHead>
+                <TableHead className="text-right">MRP ₹</TableHead>
+                <TableHead>Supplier</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {batchesForMedicine?.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="p-8 text-center text-muted-foreground">
+                    No batches recorded yet.
+                  </TableCell>
+                </TableRow>
+              )}
+              {batchesForMedicine?.map((b) => (
+                <TableRow key={b.id}>
+                  <TableCell className="font-medium">{b.batchNo}</TableCell>
+                  <TableCell>{formatDate(b.expiryDate)}</TableCell>
+                  <TableCell className="text-right">
+                    <Badge variant={b.quantity === 0 ? "destructive" : b.quantity <= 10 ? "secondary" : "outline"}>
+                      {b.quantity}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right font-mono">{formatInr(b.mrp)}</TableCell>
+                  <TableCell>{b.supplierName || "—"}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="icon" onClick={() => openEditBatchFor(b)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setDeleteBatchTarget({ id: b.id, batchNo: b.batchNo })}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </DialogContent>
+      </Dialog>
+
+      <BatchEditDialog
+        open={batchDialogOpen}
+        onOpenChange={setBatchDialogOpen}
+        medicineId={batchesFor?.id ?? 0}
+        batch={editingBatch}
+        suppliers={suppliers}
+        onSaved={invalidateBatches}
+      />
+      <DeleteBatchDialog
+        batch={deleteBatchTarget}
+        onOpenChange={(open) => !open && setDeleteBatchTarget(null)}
+        onDeleted={invalidateBatches}
+      />
     </div>
   );
 }

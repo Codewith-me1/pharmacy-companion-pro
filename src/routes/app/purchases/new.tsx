@@ -117,10 +117,10 @@ function NewPurchase() {
 
   // For a genuinely new medicine that isn't in the catalog/database yet — every field starts
   // blank/zero and is filled in directly in the table, same as any other row.
-  function addBlankItem() {
+  function addBlankItem(nameHint = "") {
     pushItem({
       medicineId: null,
-      medicineNameRaw: medicineSearch.trim().toUpperCase(),
+      medicineNameRaw: nameHint.trim().toUpperCase(),
       pack: null,
       batchNo: null,
       expiryDate: null,
@@ -407,49 +407,46 @@ function NewPurchase() {
                 <Button size="sm" variant="ghost" onClick={() => setShowAdvancedCols((v) => !v)}>
                   {showAdvancedCols ? "Hide" : "Show"} HSN / Free Qty / GST columns
                 </Button>
-              <Popover open={addItemOpen} onOpenChange={setAddItemOpen}>
-                <PopoverTrigger asChild>
-                  <Button size="sm" variant="outline">
-                    <Plus className="h-4 w-4" /> Add Item
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-80 p-0" align="end">
-                  <Command shouldFilter={false}>
-                    <CommandInput
-                      placeholder="Type a medicine name…"
-                      value={medicineSearch}
-                      onValueChange={setMedicineSearch}
-                    />
-                    <CommandList>
-                      <CommandEmpty>
-                        {medicineSearch ? "No medicine matched — add it as new below." : "Start typing to search medicines…"}
-                      </CommandEmpty>
-                      <CommandGroup>
-                        {medicineResults?.map((m) => (
-                          <CommandItem key={m.id} value={String(m.id)} onSelect={() => addManualItem(m)}>
-                            <div className="flex flex-1 items-center justify-between gap-2">
-                              <div className="flex flex-col">
-                                <span className="font-medium">{m.name}</span>
-                                <span className="text-xs text-muted-foreground">
-                                  {[m.pack, m.company].filter(Boolean).join(" · ") || "—"}
-                                </span>
+                <Button size="sm" variant="outline" onClick={() => addBlankItem()}>
+                  <SquarePen className="h-4 w-4" /> New Medicine
+                </Button>
+                <Popover open={addItemOpen} onOpenChange={setAddItemOpen}>
+                  <PopoverTrigger asChild>
+                    <Button size="sm" variant="outline">
+                      <Plus className="h-4 w-4" /> Add Item
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80 p-0" align="end">
+                    <Command shouldFilter={false}>
+                      <CommandInput
+                        placeholder="Type a medicine name…"
+                        value={medicineSearch}
+                        onValueChange={setMedicineSearch}
+                      />
+                      <CommandList>
+                        <CommandEmpty>
+                          {medicineSearch
+                            ? `No medicine matched — use "New Medicine" instead.`
+                            : "Start typing to search medicines…"}
+                        </CommandEmpty>
+                        <CommandGroup>
+                          {medicineResults?.map((m) => (
+                            <CommandItem key={m.id} value={String(m.id)} onSelect={() => addManualItem(m)}>
+                              <div className="flex flex-1 items-center justify-between gap-2">
+                                <div className="flex flex-col">
+                                  <span className="font-medium">{m.name}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {[m.pack, m.company].filter(Boolean).join(" · ") || "—"}
+                                  </span>
+                                </div>
+                                <SearchCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                               </div>
-                              <SearchCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                            </div>
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                      <CommandGroup heading="Not in the database yet?">
-                        <CommandItem value="__add_new_medicine__" onSelect={addBlankItem}>
-                          <Plus className="h-3.5 w-3.5 shrink-0" />
-                          {medicineSearch.trim()
-                            ? `Add "${medicineSearch.trim().toUpperCase()}" as a new medicine`
-                            : "Add a blank row for a new medicine"}
-                        </CommandItem>
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
                 </Popover>
               </div>
             </CardHeader>
