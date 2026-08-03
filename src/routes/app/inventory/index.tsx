@@ -11,6 +11,7 @@ import { MEDICINE_CATALOG, type MedicineCatalogItem } from "@/lib/medicine-catal
 import { ImportCsvDialog } from "@/components/import-csv-dialog";
 import type { CsvTemplateColumn } from "@/lib/csv";
 import { BatchEditDialog, DeleteBatchDialog, type EditableBatch } from "@/components/batch-dialogs";
+import { AddBatchDialog } from "@/components/add-batch-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -51,8 +52,8 @@ export const Route = createFileRoute("/app/inventory/")({
 const MEDICINE_IMPORT_COLUMNS: CsvTemplateColumn[] = [
   { key: "name", label: "Name", required: true, example: "PARACETAMOL" },
   { key: "brand", label: "Brand", example: "CROCIN" },
-  { key: "company", label: "Company", example: "GSK" },
-  { key: "category", label: "Category", example: "Tablet" },
+  { key: "company", label: "Manufacturer Name", example: "GSK" },
+  { key: "category", label: "Medicine Type", example: "Tablet" },
   { key: "pack", label: "Pack", example: "10X10" },
   { key: "mrp", label: "MRP", example: "35" },
   { key: "sellingPrice", label: "Selling Price", example: "32" },
@@ -65,14 +66,14 @@ const MEDICINE_IMPORT_COLUMNS: CsvTemplateColumn[] = [
 
 const emptyMedicine = {
   name: "",
-  brand: "",
   company: "",
   category: "",
   pack: "",
   mrp: 0,
   sellingPrice: 0,
   purchasePrice: 0,
-  gstPercent: 12,
+  cgstPercent: 6,
+  sgstPercent: 6,
   discount: 0,
   hsnCode: "",
   barcode: "",
@@ -97,6 +98,7 @@ function Inventory() {
   const [batchDialogOpen, setBatchDialogOpen] = useState(false);
   const [deleteBatchTarget, setDeleteBatchTarget] = useState<{ id: number; batchNo: string } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
+  const [addBatchOpen, setAddBatchOpen] = useState(false);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -135,16 +137,17 @@ function Inventory() {
 
   function openEdit(m: NonNullable<typeof data>[number]) {
     setEditingId(m.id);
+    const halfGst = m.gstPercent / 2;
     setForm({
       name: m.name,
-      brand: m.brand ?? "",
       company: m.company ?? "",
       category: m.category ?? "",
       pack: m.pack ?? "",
       mrp: m.mrp,
       sellingPrice: m.sellingPrice,
       purchasePrice: m.purchasePrice,
-      gstPercent: m.gstPercent,
+      cgstPercent: halfGst,
+      sgstPercent: halfGst,
       discount: m.discount,
       hsnCode: m.hsnCode ?? "",
       barcode: m.barcode ?? "",
@@ -157,22 +160,28 @@ function Inventory() {
   }
 
   function applyCatalogItem(item: MedicineCatalogItem) {
+    const halfGst = item.gstPercent / 2;
     setForm((f) => ({
       ...f,
       name: item.name.toUpperCase(),
-      brand: item.brand,
       company: item.company,
       category: item.category,
       pack: item.pack.toUpperCase(),
       hsnCode: item.hsnCode,
-      gstPercent: item.gstPercent,
+      cgstPercent: halfGst,
+      sgstPercent: halfGst,
     }));
     setCatalogOpen(false);
     toast.success(`Filled details for ${item.brand}. Add your pricing to finish.`);
   }
 
   const saveMutation = useMutation({
-    mutationFn: () => upsertMedicine({ data: { ...form, id: editingId ?? undefined } }),
+    mutationFn: () => {
+      const { cgstPercent, sgstPercent, ...rest } = form;
+      return upsertMedicine({
+        data: { ...rest, gstPercent: cgstPercent + sgstPercent, id: editingId ?? undefined },
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["medicines"] });
       toast.success(editingId ? "Medicine updated." : "Medicine added.");
@@ -206,6 +215,9 @@ function Inventory() {
           <p className="text-sm text-muted-foreground">Medicine master and batch-level stock.</p>
         </div>
         <div className="flex gap-2">
+        <Button variant="outline" onClick={() => setAddBatchOpen(true)}>
+          <CalendarClock className="h-4 w-4" /> Add Batch
+        </Button>
         <ImportCsvDialog
           entityName="Medicine"
           columns={MEDICINE_IMPORT_COLUMNS}
@@ -298,16 +310,13 @@ function Inventory() {
                       onChange={(e) => setForm({ ...form, name: e.target.value.toUpperCase() })}
                     />
                   </F>
-                  <F label="Brand">
-                    <Input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} />
-                  </F>
-                  <F label="Company">
+                  <F label="Manufacturer Name">
                     <Input value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} />
                   </F>
-                  <F label="Category">
+                  <F label="Medicine Type">
                     <Select value={form.category} onValueChange={(v) => setForm({ ...form, category: v })}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select category" />
+                        <SelectValue placeholder="Select medicine type" />
                       </SelectTrigger>
                       <SelectContent>
                         {MEDICINE_CATEGORIES.map((c) => (
@@ -362,13 +371,24 @@ function Inventory() {
                       onChange={(e) => setForm({ ...form, purchasePrice: Number(e.target.value) })}
                     />
                   </F>
-                  <F label="GST %">
+                  <F label="CGST %">
                     <Input
                       type="number"
                       placeholder="0"
-                      value={form.gstPercent || ""}
-                      onChange={(e) => setForm({ ...form, gstPercent: Number(e.target.value) })}
+                      value={form.cgstPercent || ""}
+                      onChange={(e) => setForm({ ...form, cgstPercent: Number(e.target.value) })}
                     />
+                  </F>
+                  <F label="SGST %">
+                    <Input
+                      type="number"
+                      placeholder="0"
+                      value={form.sgstPercent || ""}
+                      onChange={(e) => setForm({ ...form, sgstPercent: Number(e.target.value) })}
+                    />
+                  </F>
+                  <F label={`Total GST: ${(form.cgstPercent + form.sgstPercent).toFixed(2)}%`}>
+                    <p className="pt-2 text-xs text-muted-foreground">CGST + SGST, applied on intra-state sales.</p>
                   </F>
                   <F label="Discount %">
                     <Input
@@ -453,7 +473,7 @@ function Inventory() {
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             className="pl-9"
-            placeholder="Search by medicine, company, or barcode…"
+            placeholder="Search by medicine, manufacturer, or barcode…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -493,8 +513,8 @@ function Inventory() {
                 <TableHead>Medicine</TableHead>
                 <TableHead>Pack</TableHead>
                 <TableHead>Batch No.</TableHead>
-                <TableHead>Company</TableHead>
-                <TableHead>Category</TableHead>
+                <TableHead>Manufacturer</TableHead>
+                <TableHead>Type</TableHead>
                 <TableHead className="text-right">GST%</TableHead>
                 <TableHead className="text-right">MRP</TableHead>
                 <TableHead className="text-right">Available Qty</TableHead>
@@ -677,6 +697,14 @@ function Inventory() {
         batch={deleteBatchTarget}
         onOpenChange={(open) => !open && setDeleteBatchTarget(null)}
         onDeleted={invalidateBatches}
+      />
+      <AddBatchDialog
+        open={addBatchOpen}
+        onOpenChange={setAddBatchOpen}
+        onSaved={() => {
+          queryClient.invalidateQueries({ queryKey: ["medicines"] });
+          queryClient.invalidateQueries({ queryKey: ["expiry-dashboard"] });
+        }}
       />
     </div>
   );

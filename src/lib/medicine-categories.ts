@@ -8,5 +8,10 @@ export const MEDICINE_CATEGORIES = [
   "Drops",
   "Powder",
   "Inhaler",
+  "Suppository",
+  "Suspension",
+  "Solution",
+  "Gel",
+  "Lotion",
   "Other",
 ] as const;

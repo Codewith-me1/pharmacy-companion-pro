@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { listMedicines } from "@/lib/api/medicines.functions";
 import { listBatchesForMedicine, listStockMovements, recordStockMovement, stockSummary } from "@/lib/api/stock.functions";
+import { AddBatchDialog } from "@/components/add-batch-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -12,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatCard } from "@/components/stat-card";
-import { Wallet, AlertTriangle, PackageX } from "lucide-react";
+import { Wallet, AlertTriangle, PackageX, Plus } from "lucide-react";
 import { formatInr, formatDate } from "@/lib/format";
 
 export const Route = createFileRoute("/app/stock/")({
@@ -37,6 +38,15 @@ function StockPage() {
   const [type, setType] = useState<(typeof MOVEMENT_TYPES)[number]["value"]>("in");
   const [quantity, setQuantity] = useState(0);
   const [reason, setReason] = useState("");
+  const [addBatchOpen, setAddBatchOpen] = useState(false);
+
+  function invalidateAfterBatchAdd() {
+    queryClient.invalidateQueries({ queryKey: ["medicines"] });
+    queryClient.invalidateQueries({ queryKey: ["batches"] });
+    queryClient.invalidateQueries({ queryKey: ["stock-movements"] });
+    queryClient.invalidateQueries({ queryKey: ["stock-summary"] });
+    queryClient.invalidateQueries({ queryKey: ["expiry-dashboard"] });
+  }
 
   const { data: medicines } = useQuery({ queryKey: ["medicines", ""], queryFn: () => listMedicines() });
   const { data: batches } = useQuery({
@@ -63,11 +73,16 @@ function StockPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-bold">Stock Management</h1>
-        <p className="text-sm text-muted-foreground">
-          Stock in/out, adjustments, transfers, damage, loss, expiry and returns — all in one place.
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold">Stock Management</h1>
+          <p className="text-sm text-muted-foreground">
+            Stock in/out, adjustments, transfers, damage, loss, expiry and returns — all in one place.
+          </p>
+        </div>
+        <Button onClick={() => setAddBatchOpen(true)}>
+          <Plus className="h-4 w-4" /> Add Batch
+        </Button>
       </div>
 
       {summary && (
@@ -112,6 +127,15 @@ function StockPage() {
                 ))}
               </SelectContent>
             </Select>
+            {medicineId && batches?.length === 0 && (
+              <button
+                type="button"
+                className="text-left text-xs font-medium text-primary hover:underline"
+                onClick={() => setAddBatchOpen(true)}
+              >
+                No batches yet — add one
+              </button>
+            )}
           </div>
           <div className="flex flex-col gap-1">
             <Label className="text-xs text-muted-foreground">Movement Type</Label>
@@ -187,6 +211,8 @@ function StockPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <AddBatchDialog open={addBatchOpen} onOpenChange={setAddBatchOpen} onSaved={invalidateAfterBatchAdd} />
     </div>
   );
 }

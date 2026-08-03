@@ -22,7 +22,11 @@ export const signup = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({
       name: z.string().min(1, "Name is required"),
-      pharmacyName: z.string().optional(),
+      pharmacyName: z.string().min(1, "Pharmacy name is required"),
+      mobile: z.string().min(1, "Mobile number is required"),
+      dlNo: z.string().optional(),
+      gstNumber: z.string().optional(),
+      address: z.string().optional(),
       email: z.string().email("Enter a valid email address"),
       password: z.string().min(8, "Password must be at least 8 characters"),
     }),
@@ -38,13 +42,20 @@ export const signup = createServerFn({ method: "POST" })
     const passwordHash = await hashPassword(data.password);
     const [user] = await db
       .insert(users)
-      .values({ email, passwordHash, name: data.name.trim(), pharmacyName: data.pharmacyName?.trim() })
+      .values({ email, passwordHash, name: data.name.trim(), pharmacyName: data.pharmacyName.trim() })
       .returning();
 
-    // Give every new account a starter business-settings row so Settings/Sales/Billing don't
-    // have to handle a "no row yet" case differently from "row exists but blank".
+    // Give every new account a starter business-settings row pre-filled from signup, so
+    // Settings/Sales/Billing don't have to handle a "no row yet" case, and bills print correctly
+    // from the very first sale instead of needing a trip to Settings first.
     await withTenant(user.id, async (db) => {
-      await db.insert(businessSettings).values({ firmName: data.pharmacyName?.trim() || data.name.trim() });
+      await db.insert(businessSettings).values({
+        firmName: data.pharmacyName.trim(),
+        mobile: data.mobile.trim(),
+        dlNo: data.dlNo?.trim() || undefined,
+        gstNumber: data.gstNumber?.trim() || undefined,
+        address: data.address?.trim() || undefined,
+      });
     });
 
     await setSessionUser(user.id);

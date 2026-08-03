@@ -48,16 +48,27 @@ export const createBatch = createServerFn({ method: "POST" })
       expiryDate: z.string().min(1),
       manufactureDate: z.string().optional(),
       quantity: z.number().int().min(0),
+      // Free/bonus units on top of the billed quantity — folded into the batch's single stored
+      // quantity (same convention as Purchase Entry's savePurchase), since batches don't track
+      // billed vs. free separately.
+      freeQuantity: z.number().int().min(0).optional(),
       purchasePrice: z.number(),
       mrp: z.number(),
       ptr: z.number().optional(),
       pts: z.number().optional(),
       supplierId: z.number().optional(),
+      // GST is a medicine-level rate, not per-batch — if provided, this updates the medicine's
+      // stored gstPercent (CGST+SGST) as a convenience so it can be fixed while adding stock,
+      // without a separate trip to Edit Medicine.
+      cgstPercent: z.number().optional(),
+      sgstPercent: z.number().optional(),
+      remarks: z.string().optional(),
     }),
   )
   .handler(async ({ data }) => {
     const userId = await requireUserId();
     return withTenant(userId, async (db) => {
+      const totalQuantity = data.quantity + (data.freeQuantity ?? 0);
       const [batch] = await db
         .insert(batches)
         .values({
@@ -65,7 +76,7 @@ export const createBatch = createServerFn({ method: "POST" })
           batchNo: data.batchNo.toUpperCase(),
           expiryDate: data.expiryDate,
           manufactureDate: data.manufactureDate,
-          quantity: data.quantity,
+          quantity: totalQuantity,
           purchasePrice: data.purchasePrice,
           mrp: data.mrp,
           ptr: data.ptr ?? 0,
@@ -74,13 +85,20 @@ export const createBatch = createServerFn({ method: "POST" })
         })
         .returning();
 
-      if (data.quantity > 0) {
+      if (data.cgstPercent != null && data.sgstPercent != null) {
+        await db
+          .update(medicines)
+          .set({ gstPercent: data.cgstPercent + data.sgstPercent })
+          .where(eq(medicines.id, data.medicineId));
+      }
+
+      if (totalQuantity > 0) {
         await db.insert(stockMovements).values({
           medicineId: data.medicineId,
           batchId: batch.id,
           type: "in",
-          quantity: data.quantity,
-          reason: "Manually added batch",
+          quantity: totalQuantity,
+          reason: data.remarks?.trim() || "Manually added batch",
           referenceType: "manual",
         });
       }
