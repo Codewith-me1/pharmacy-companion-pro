@@ -7,6 +7,7 @@ import { extractInvoice, savePurchase } from "@/lib/api/purchases.functions";
 import { listMedicines } from "@/lib/api/medicines.functions";
 import { fileToBase64 } from "@/lib/file-to-base64";
 import { pdfToImageBlob } from "@/lib/pdf-to-image";
+import { extractPdfText } from "@/lib/pdf-text";
 import { enhanceInvoiceImage } from "@/lib/enhance-image";
 import { FetchEmailDialog } from "@/components/fetch-email-dialog";
 import { Button } from "@/components/ui/button";
@@ -41,6 +42,14 @@ const FLAG_LABELS: Record<string, string> = {
   quantity_mismatch: "Qty issue",
   possible_duplicate_data: "Check vs photo — looks copied",
 };
+
+// Trade discount is applied before GST, matching how suppliers actually compute it on the
+// printed invoice — the "Amount" column and GST value both need to reflect the discounted cost,
+// not the raw rate x quantity.
+function netLineAmount(item: { purchasePrice: number; quantity: number; discount?: number | null }): number {
+  const discountFactor = 1 - (item.discount ?? 0) / 100;
+  return item.purchasePrice * item.quantity * discountFactor;
+}
 
 const emptyDraft: Draft = {
   supplier: { id: null, name: "", gstNumber: "", dlNo: "", address: "" },
@@ -167,6 +176,22 @@ function NewPurchase() {
     await processBase64(base64, mimeType, source);
   }
 
+  async function processRawText(text: string, source: "camera" | "pdf" | "email") {
+    setSourceLabel(source);
+    setStep("extracting");
+    try {
+      const result = await extractInvoice({ data: { rawText: text, sourceLabel: source } });
+      setDraft(result.draft);
+      setStep("review");
+      toast.success(
+        `Extracted ${result.draft.items.length} line item(s) directly from the PDF's own text — no OCR needed, so this reading is exact.`,
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to extract invoice.");
+      setStep("capture");
+    }
+  }
+
   async function processMaybePdf(file: File, source: "camera" | "pdf" | "email") {
     if (file.type !== "application/pdf") {
       await processFile(file, source);
@@ -174,6 +199,15 @@ function NewPurchase() {
     }
     setStep("converting");
     try {
+      // A digitally-generated invoice PDF has its own exact text — read that directly instead of
+      // rasterizing to a photo and OCR'ing it back into text, since that round-trip can only ever
+      // lose accuracy, never gain it. Only fall back to image+OCR when there's no usable text
+      // layer, which means this is a scanned invoice saved as a PDF.
+      const { text, hasMeaningfulText } = await extractPdfText(file);
+      if (hasMeaningfulText) {
+        await processRawText(text, source);
+        return;
+      }
       const imageBlob = await pdfToImageBlob(file);
       await processFile(imageBlob, source);
     } catch (err) {
@@ -285,7 +319,7 @@ function NewPurchase() {
         <Card>
           <CardContent className="flex flex-col items-center gap-4 p-16">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="text-sm text-muted-foreground">Converting PDF to an image…</p>
+            <p className="text-sm text-muted-foreground">Reading PDF…</p>
           </CardContent>
         </Card>
       )}
@@ -463,6 +497,7 @@ function NewPurchase() {
                     {showAdvancedCols && <TableHead>Free</TableHead>}
                     <TableHead>Rate ₹</TableHead>
                     <TableHead>MRP ₹</TableHead>
+                    <TableHead>Disc %</TableHead>
                     {showAdvancedCols && <TableHead>GST %</TableHead>}
                     {showAdvancedCols && <TableHead>GST Value ₹</TableHead>}
                     <TableHead>Amount ₹</TableHead>
@@ -473,7 +508,7 @@ function NewPurchase() {
                 <TableBody>
                   {draft.items.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={showAdvancedCols ? 14 : 10} className="p-8 text-center text-muted-foreground">
+                      <TableCell colSpan={showAdvancedCols ? 15 : 11} className="p-8 text-center text-muted-foreground">
                         No line items yet. Use "Add Item" to search for a medicine and add it manually.
                       </TableCell>
                     </TableRow>
@@ -551,6 +586,15 @@ function NewPurchase() {
                           onChange={(e) => updateItem(i, { mrp: Number(e.target.value) })}
                         />
                       </TableCell>
+                      <TableCell>
+                        <Input
+                          className="w-16"
+                          type="number"
+                          placeholder="0"
+                          value={item.discount ?? ""}
+                          onChange={(e) => updateItem(i, { discount: Number(e.target.value) })}
+                        />
+                      </TableCell>
                       {showAdvancedCols && (
                         <TableCell>
                           <Input
@@ -563,11 +607,11 @@ function NewPurchase() {
                       )}
                       {showAdvancedCols && (
                         <TableCell className="whitespace-nowrap text-right font-mono text-xs text-muted-foreground">
-                          {((item.purchasePrice * item.quantity * item.gstPercent) / 100).toFixed(2)}
+                          {((netLineAmount(item) * item.gstPercent) / 100).toFixed(2)}
                         </TableCell>
                       )}
                       <TableCell className="whitespace-nowrap text-right font-mono text-xs">
-                        {(item.purchasePrice * item.quantity).toFixed(2)}
+                        {netLineAmount(item).toFixed(2)}
                       </TableCell>
                       <TableCell className="max-w-40">
                         <div className="flex flex-wrap gap-1">
@@ -613,6 +657,10 @@ function NewPurchase() {
         onSelectImage={(base64, mimeType) => {
           setShowEmailDialog(false);
           processBase64(base64, mimeType, "email");
+        }}
+        onSelectText={(text) => {
+          setShowEmailDialog(false);
+          processRawText(text, "email");
         }}
       />
     </div>

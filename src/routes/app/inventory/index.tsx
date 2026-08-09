@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CalendarClock, IndianRupee, ListFilter, Pencil, Pill, Plus, Search, SearchCheck, Trash2 } from "lucide-react";
+import { CalendarClock, CalendarPlus, IndianRupee, ListFilter, Pencil, Pill, Plus, Search, SearchCheck, Trash2 } from "lucide-react";
 import { listMedicines, upsertMedicine, deleteMedicine, bulkImportMedicines } from "@/lib/api/medicines.functions";
 import { listSuppliers } from "@/lib/api/suppliers.functions";
 import { listBatchesForMedicine } from "@/lib/api/stock.functions";
@@ -10,7 +10,13 @@ import { MEDICINE_CATEGORIES } from "@/lib/medicine-categories";
 import { MEDICINE_CATALOG, type MedicineCatalogItem } from "@/lib/medicine-catalog";
 import { ImportCsvDialog } from "@/components/import-csv-dialog";
 import type { CsvTemplateColumn } from "@/lib/csv";
-import { BatchEditDialog, DeleteBatchDialog, type EditableBatch } from "@/components/batch-dialogs";
+import {
+  AddExpiryQuantityDialog,
+  BatchEditDialog,
+  DeleteBatchDialog,
+  type EditableBatch,
+  type ExpiryStockBatch,
+} from "@/components/batch-dialogs";
 import { AddBatchDialog } from "@/components/add-batch-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -93,12 +99,13 @@ function Inventory() {
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState(emptyMedicine);
-  const [batchesFor, setBatchesFor] = useState<{ id: number; name: string } | null>(null);
+  const [batchesFor, setBatchesFor] = useState<{ id: number; name: string; pack: string | null } | null>(null);
   const [editingBatch, setEditingBatch] = useState<EditableBatch | null>(null);
   const [batchDialogOpen, setBatchDialogOpen] = useState(false);
   const [deleteBatchTarget, setDeleteBatchTarget] = useState<{ id: number; batchNo: string } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
   const [addBatchOpen, setAddBatchOpen] = useState(false);
+  const [expiryQtyTarget, setExpiryQtyTarget] = useState<ExpiryStockBatch | null>(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -568,7 +575,7 @@ function Inventory() {
                         title="View / edit batches &amp; expiry"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setBatchesFor({ id: m.id, name: m.name });
+                          setBatchesFor({ id: m.id, name: m.name, pack: m.pack });
                         }}
                       >
                         <CalendarClock className="h-4 w-4" />
@@ -666,6 +673,14 @@ function Inventory() {
                   <TableCell>{b.supplierName || "—"}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="Add expiry stock"
+                        onClick={() => setExpiryQtyTarget({ id: b.id, batchNo: b.batchNo, mrp: b.mrp, quantity: b.quantity })}
+                      >
+                        <CalendarPlus className="h-4 w-4" />
+                      </Button>
                       <Button variant="ghost" size="icon" onClick={() => openEditBatchFor(b)}>
                         <Pencil className="h-4 w-4" />
                       </Button>
@@ -705,6 +720,15 @@ function Inventory() {
           queryClient.invalidateQueries({ queryKey: ["medicines"] });
           queryClient.invalidateQueries({ queryKey: ["expiry-dashboard"] });
         }}
+      />
+      <AddExpiryQuantityDialog
+        open={!!expiryQtyTarget}
+        onOpenChange={(open) => !open && setExpiryQtyTarget(null)}
+        medicineId={batchesFor?.id ?? 0}
+        medicineName={batchesFor?.name ?? ""}
+        pack={batchesFor?.pack}
+        batch={expiryQtyTarget}
+        onSaved={invalidateBatches}
       />
     </div>
   );

@@ -239,13 +239,37 @@ export function flagSuspiciousDuplicateRows(
   }
 }
 
+// Guidance that applies regardless of whether the model is reading Azure OCR output or a PDF's
+// own embedded text layer — column-mapping conventions, the row-anchoring failure mode, layout
+// quirks, and field-ownership rules don't depend on how the text was obtained.
+const SHARED_EXTRACTION_GUIDANCE = [
+  "CRITICAL — use the table grid as the source of truth, not just the free text above it: every row in the '=== DETECTED TABLE STRUCTURE ===' grid has its OWN batch number, MRP, rate, HSN and expiry, even when several rows are the same brand family or look like similar products (e.g. the same item in different pack sizes). Read each row's values from that row's own grid cells only — never carry over or default to a neighboring row's values just because the product name looks similar. If two DIFFERENT medicine rows end up with an identical batch+MRP+rate+HSN combination, that almost always means a value got assigned to the wrong row — re-check both rows against the grid before finalizing either one.",
+  "",
+  "Real layout quirks to watch for — do not let these cause null/wrong fields:",
+  "- Column headers are very often abbreviated: 'Qty'/'Bill Qty'/'Q.ty' = billed quantity, 'F.Qty'/'Free' = free quantity, 'Exp'/'Exp.Dt'/'E.Date' = expiry, 'B.No'/'Bt.No' = batch number, 'P.Rate'/'Rate'/'Cost' = purchase price, 'Disc'/'Disc%' = discount. Map these the same as their full names.",
+  "- Expiry (and manufacture) dates are often a 2-digit-year short form like '08/27' — that means August 2027, NOT day-27-of-something. Treat any MM/YY-shaped token in an expiry-ish column or position the same way you'd treat MM/YYYY; report it exactly as printed either way, don't expand the year yourself.",
+  "- Some invoices have no separate Pack or Expiry column at all — only one 'Particulars'/'Description' column. On those, the pack size and/or batch+expiry are printed as extra lines stacked directly below the medicine name, inside that same cell (they'll show up as extra text right after the product name in the grid cell or in the full document text immediately below it). Actively look there for a pack-size-shaped token (e.g. '10X10', '100ML', '1X6', '30S') and a date-shaped token (MM/YY or MM/YYYY) whenever the dedicated pack/expiry columns are empty or missing, and use those instead of leaving the fields null.",
+  "",
+  "- Process every row of the goods table top to bottom, even if there are 20+ rows. Never skip, merge, truncate, or summarize rows.",
+  "- Cross-check arithmetic where possible: if a row has quantity, rate and amount, amount should roughly equal quantity x rate — a clear mismatch means one of the three was likely misread; re-derive it from the grid before finalizing.",
+  "- GST is usually printed as CGST+SGST (intra-state) or IGST (inter-state), as either a rate (%) or an amount. Report whichever is present in cgst/sgst/igst, and always fill gstPercent with the combined rate even if you have to sum CGST%+SGST%.",
+  "- supplierDlNo and supplierGstNumber belong to the SELLER printed on the invoice letterhead, never the buyer's/pharmacy's own details even if both appear in the text.",
+].join("\n");
+
 export const extractInvoice = createServerFn({ method: "POST" })
   .inputValidator(
-    z.object({
-      imageBase64: z.string(),
-      mimeType: z.string().default("image/jpeg"),
-      sourceLabel: z.enum(["camera", "webcam", "pdf", "scanner", "email"]).default("camera"),
-    }),
+    z
+      .object({
+        imageBase64: z.string().optional(),
+        mimeType: z.string().default("image/jpeg"),
+        // Set when the source PDF has its own embedded text layer (a digitally-generated
+        // invoice, not a scan) — extracted client-side via pdf.js. When present, this is used
+        // instead of the image+OCR pipeline: reading a PDF's real text is inherently more
+        // accurate than rasterizing it to a photo and OCR'ing that back into text.
+        rawText: z.string().optional(),
+        sourceLabel: z.enum(["camera", "webcam", "pdf", "scanner", "email"]).default("camera"),
+      })
+      .refine((d) => d.imageBase64 || d.rawText, { message: "Either imageBase64 or rawText is required." }),
   )
   .handler(async ({ data }) => {
     const userId = await requireUserId();
@@ -255,37 +279,56 @@ export const extractInvoice = createServerFn({ method: "POST" })
         "OPENAI_API_KEY is not configured. Add it to your .env file to enable AI invoice extraction.",
       );
     }
-    if (!config.azureDocIntelEndpoint || !config.azureDocIntelKey) {
-      throw new Error(
-        "Azure Document Intelligence is not configured. Add AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT and AZURE_DOCUMENT_INTELLIGENCE_KEY to your .env file to enable AI invoice extraction.",
-      );
-    }
 
-    // Pipeline: Bill Image -> Azure Document Intelligence (Layout) -> OCR text + table grid ->
-    // ChatGPT -> structured JSON. Azure's layout model is a specialist OCR+table-structure
-    // engine, so it pins every printed value to an exact row/column far more reliably than asking
-    // a vision LLM to read the raw photo. That split — Azure does the pixel-reading, the LLM does
-    // the semantic mapping onto our schema — is what buys the accuracy improvement over sending
-    // the photo straight to the vision model.
-    const layout = await analyzeInvoiceLayout(
-      config.azureDocIntelEndpoint,
-      config.azureDocIntelKey,
-      Buffer.from(data.imageBase64, "base64"),
-    );
+    const usingDirectText = !!data.rawText;
+    let sourceText: string;
 
-    if (!layout.text || layout.text.replace(/[^a-zA-Z0-9]/g, "").length < 20) {
-      throw new Error(
-        "Azure Document Intelligence could not read any text from this photo. Try a clearer, better-lit photo.",
+    if (usingDirectText) {
+      // Best case for accuracy: no OCR at all. The PDF's own text layer is exact — every
+      // character is exactly what the invoice-generating software wrote, with zero
+      // recognition uncertainty.
+      sourceText = data.rawText!;
+      if (sourceText.replace(/[^a-zA-Z0-9]/g, "").length < 20) {
+        throw new Error("This PDF's embedded text is too sparse to read — it may be a scanned image saved as PDF.");
+      }
+    } else {
+      if (!config.azureDocIntelEndpoint || !config.azureDocIntelKey) {
+        throw new Error(
+          "Azure Document Intelligence is not configured. Add AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT and AZURE_DOCUMENT_INTELLIGENCE_KEY to your .env file to enable AI invoice extraction.",
+        );
+      }
+      // Pipeline: Bill Image -> Azure Document Intelligence (Layout) -> OCR text + table grid ->
+      // ChatGPT -> structured JSON. Azure's layout model is a specialist OCR+table-structure
+      // engine, so it pins every printed value to an exact row/column far more reliably than
+      // asking a vision LLM to read the raw photo.
+      const layout = await analyzeInvoiceLayout(
+        config.azureDocIntelEndpoint,
+        config.azureDocIntelKey,
+        Buffer.from(data.imageBase64!, "base64"),
       );
+      if (!layout.text || layout.text.replace(/[^a-zA-Z0-9]/g, "").length < 20) {
+        throw new Error(
+          "Azure Document Intelligence could not read any text from this photo. Try a clearer, better-lit photo.",
+        );
+      }
+      sourceText = layout.text;
     }
 
     const { default: OpenAI } = await import("openai");
     const { zodResponseFormat } = await import("openai/helpers/zod");
     const client = new OpenAI({ apiKey: config.openaiApiKey });
 
+    const framing = usingDirectText
+      ? "You are an expert pharmacist's assistant that converts a purchase invoice's own embedded PDF text into structured data. This text was extracted directly from the PDF's text layer (via pdf.js), not by OCR — every character is exactly what the invoice-generating software wrote, so trust it verbatim and never 'correct' a character as if it were an OCR misread. The one imperfection: text was grouped into lines by on-page position, so a row is given as 'cell | cell | cell' in left-to-right order, but exactly which column a cell belongs to still needs to be inferred the same way you would from a printed table."
+      : "You are an expert pharmacist's assistant that converts OCR-extracted text and table structure from an Indian pharmaceutical purchase invoice into structured data. You are NOT looking at the original photo — you are given Azure Document Intelligence's OCR output: the full document text in reading order, plus an explicit row/column grid for every table it detected on the page. Azure's OCR is very accurate but not perfect — resolve likely misreads using context (a numeric column showing a stray letter almost certainly meant the visually similar digit: O->0, S->5, I or l->1, B->8, G->6, Z->2).";
+
+    const nullRule = usingDirectText
+      ? "- Only output null for a field when it is genuinely absent from the text (including stacked lines under the medicine name) — this text is exact, so there's no 'garbled OCR' case to guess around; null means the invoice simply doesn't print that value."
+      : "- Only output null for a field when it is genuinely absent from both the OCR text and the table grid (including stacked lines under the medicine name) — if there's a partial or slightly garbled value anywhere, give your best corrected reading and lower that row's confidence instead of nulling it.";
+
     // Structured Outputs (response_format below) guarantees the JSON always matches
     // extractedInvoiceSchema exactly (every field present, correct types) — a real accuracy floor
-    // independent of model size, so it's kept regardless of which model reads the OCR text.
+    // independent of model size, so it's kept regardless of which model reads the source text.
     const response = await client.chat.completions.parse({
       model: process.env.OPENAI_EXTRACTION_MODEL || process.env.OPENAI_VISION_MODEL || "gpt-4o",
       temperature: 0,
@@ -294,34 +337,15 @@ export const extractInvoice = createServerFn({ method: "POST" })
       messages: [
         {
           role: "system",
-          content: [
-            "You are an expert pharmacist's assistant that converts OCR-extracted text and table structure from an Indian pharmaceutical purchase invoice into structured data. You are NOT looking at the original photo — you are given Azure Document Intelligence's OCR output: the full document text in reading order, plus an explicit row/column grid for every table it detected on the page.",
-            "",
-            "Your job has two parts:",
-            "1. Understand the invoice: find which table is the goods/line-items table, and map its columns to the schema fields (figure out which column is Rate vs MRP vs PTR vs PTS, Free Qty vs Billed Qty, etc. from the header row and typical Indian pharma invoice conventions — column order varies between suppliers).",
-            "2. Correct for OCR noise: Azure's OCR is very accurate but not perfect. Resolve likely misreads using context — a numeric column showing a stray letter almost certainly meant the visually similar digit (O->0, S->5, I or l->1, B->8, G->6, Z->2); pick whichever reading is consistent with the column being numeric vs alphabetic and with what's typical for that field (HSN codes are 4-8 digits, GST is one of 0/5/12/18/28).",
-            "",
-            "CRITICAL — use the table grid as the source of truth, not just the free text above it: every row in the '=== DETECTED TABLE STRUCTURE ===' grid has its OWN batch number, MRP, rate, HSN and expiry, even when several rows are the same brand family or look like similar products (e.g. the same item in different pack sizes). Read each row's values from that row's own grid cells only — never carry over or default to a neighboring row's values just because the product name looks similar. If two DIFFERENT medicine rows end up with an identical batch+MRP+rate+HSN combination, that almost always means a value got assigned to the wrong row — re-check both rows against the grid before finalizing either one.",
-            "",
-            "Real layout quirks to watch for — do not let these cause null/wrong fields:",
-            "- Column headers are very often abbreviated: 'Qty'/'Bill Qty'/'Q.ty' = billed quantity, 'F.Qty'/'Free' = free quantity, 'Exp'/'Exp.Dt'/'E.Date' = expiry, 'B.No'/'Bt.No' = batch number, 'P.Rate'/'Rate'/'Cost' = purchase price, 'Disc'/'Disc%' = discount. Map these the same as their full names.",
-            "- Expiry (and manufacture) dates are often a 2-digit-year short form like '08/27' — that means August 2027, NOT day-27-of-something. Treat any MM/YY-shaped token in an expiry-ish column or position the same way you'd treat MM/YYYY; report it exactly as printed either way, don't expand the year yourself.",
-            "- Some invoices have no separate Pack or Expiry column at all — only one 'Particulars'/'Description' column. On those, the pack size and/or batch+expiry are printed as extra lines stacked directly below the medicine name, inside that same cell (they'll show up as extra text right after the product name in the grid cell or in the full document text immediately below it). Actively look there for a pack-size-shaped token (e.g. '10X10', '100ML', '1X6', '30S') and a date-shaped token (MM/YY or MM/YYYY) whenever the dedicated pack/expiry columns are empty or missing, and use those instead of leaving the fields null.",
-            "",
-            "- Process every row of the goods table top to bottom, even if there are 20+ rows. Never skip, merge, truncate, or summarize rows.",
-            "- Cross-check arithmetic where possible: if a row has quantity, rate and amount, amount should roughly equal quantity x rate — a clear mismatch means one of the three was likely misread; re-derive it from the grid before finalizing.",
-            "- Only output null for a field when it is genuinely absent from both the OCR text and the table grid (including stacked lines under the medicine name) — if there's a partial or slightly garbled value anywhere, give your best corrected reading and lower that row's confidence instead of nulling it.",
-            "- GST is usually printed as CGST+SGST (intra-state) or IGST (inter-state), as either a rate (%) or an amount. Report whichever is present in cgst/sgst/igst, and always fill gstPercent with the combined rate even if you have to sum CGST%+SGST%.",
-            "- supplierDlNo and supplierGstNumber belong to the SELLER printed on the invoice letterhead, never the buyer's/pharmacy's own details even if both appear in the text.",
-          ].join("\n"),
+          content: [framing, "", SHARED_EXTRACTION_GUIDANCE, nullRule].join("\n"),
         },
         {
           role: "user",
           content: [
-            "Extract every field and every line item from this purchase invoice's OCR output as accurately as possible.",
+            `Extract every field and every line item from this purchase invoice's ${usingDirectText ? "embedded text" : "OCR output"} as accurately as possible.`,
             "Work through the goods table grid row by row, using each row's own cells — do not reuse a previous row's values, and do not stop early.",
             "",
-            layout.text,
+            sourceText,
           ].join("\n"),
         },
       ],

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { createBatch, updateBatch, deleteBatch } from "@/lib/api/stock.functions";
+import { createBatch, updateBatch, deleteBatch, recordStockMovement } from "@/lib/api/stock.functions";
+import { formatInr } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -225,6 +226,109 @@ export function DeleteBatchDialog({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  );
+}
+
+export interface ExpiryStockBatch {
+  id: number;
+  batchNo: string;
+  mrp: number;
+  quantity: number;
+}
+
+// Deliberately narrower than BatchEditDialog: this is for the specific, common case of "more of
+// this batch turned up than the system shows" (sold from the wrong batch, never entered, etc.) —
+// nothing about the batch itself is editable here, only its quantity. Name/Batch/MRP/Pack are
+// shown read-only purely as confirmation that you're adding to the right thing.
+export function AddExpiryQuantityDialog({
+  open,
+  onOpenChange,
+  medicineId,
+  medicineName,
+  pack,
+  batch,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  medicineId: number;
+  medicineName: string;
+  pack?: string | null;
+  batch: ExpiryStockBatch | null;
+  onSaved: () => void;
+}) {
+  const [addQty, setAddQty] = useState(0);
+
+  useEffect(() => {
+    if (open) setAddQty(0);
+  }, [open, batch]);
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      recordStockMovement({
+        data: {
+          medicineId,
+          batchId: batch!.id,
+          type: "in",
+          quantity: addQty,
+          reason: "Added to expiry stock count",
+        },
+      }),
+    onSuccess: () => {
+      toast.success(`Added ${addQty} to batch ${batch?.batchNo}.`);
+      onOpenChange(false);
+      onSaved();
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to add stock."),
+  });
+
+  return (
+    <Dialog open={open && !!batch} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add Expiry Stock</DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-muted-foreground">
+          For when more of this batch turns up than the system shows — e.g. it was sold from the wrong batch, or
+          never entered. This only adds to the existing quantity; nothing else about the batch changes.
+        </p>
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <ReadOnlyField label="Name" value={medicineName} />
+          <ReadOnlyField label="Batch" value={batch?.batchNo ?? ""} />
+          <ReadOnlyField label="MRP" value={formatInr(batch?.mrp ?? 0)} />
+          <ReadOnlyField label="Pack" value={pack || "—"} />
+        </div>
+        <div className="rounded-md border border-dashed border-border p-3">
+          <p className="text-xs text-muted-foreground">Current Total</p>
+          <p className="text-lg font-semibold">{batch?.quantity ?? 0}</p>
+        </div>
+        <Field label="Quantity to Add">
+          <Input
+            type="number"
+            placeholder="0"
+            value={addQty || ""}
+            onChange={(e) => setAddQty(Math.max(0, Number(e.target.value)))}
+          />
+        </Field>
+        <p className="text-sm text-muted-foreground">
+          New Total: <span className="font-semibold text-foreground">{(batch?.quantity ?? 0) + addQty}</span>
+        </p>
+        <DialogFooter>
+          <Button onClick={() => saveMutation.mutate()} disabled={!batch || addQty <= 0 || saveMutation.isPending}>
+            Add to Stock
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ReadOnlyField({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="font-medium">{value || "—"}</p>
+    </div>
   );
 }
 

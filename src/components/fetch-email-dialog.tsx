@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { FileImage, FileText, Loader2, Mail, RefreshCw } from "lucide-react";
 import { listSupplierInvoiceEmails, fetchEmailAttachment } from "@/lib/api/email-invoices.functions";
 import { pdfToImageBlob, base64ToBlob } from "@/lib/pdf-to-image";
+import { extractPdfText } from "@/lib/pdf-text";
 import { fileToBase64 } from "@/lib/file-to-base64";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -15,10 +16,12 @@ export function FetchEmailDialog({
   open,
   onOpenChange,
   onSelectImage,
+  onSelectText,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelectImage: (base64: string, mimeType: string) => void;
+  onSelectText: (text: string) => void;
 }) {
   const [fetchingKey, setFetchingKey] = useState<string | null>(null);
   const [convertingKey, setConvertingKey] = useState<string | null>(null);
@@ -39,6 +42,14 @@ export function FetchEmailDialog({
         setFetchingKey(null);
         setConvertingKey(key);
         const pdfBlob = base64ToBlob(result.base64, result.mimeType);
+        // Same reasoning as the manual PDF upload flow: a digitally-generated invoice's own text
+        // is exact, so read that directly rather than rasterizing to a photo and OCR'ing it back
+        // — only fall back to image+OCR when there's no usable text layer (a scanned attachment).
+        const { text, hasMeaningfulText } = await extractPdfText(pdfBlob);
+        if (hasMeaningfulText) {
+          onSelectText(text);
+          return;
+        }
         const imageBlob = await pdfToImageBlob(pdfBlob);
         const { base64, mimeType } = await fileToBase64(imageBlob);
         onSelectImage(base64, mimeType);

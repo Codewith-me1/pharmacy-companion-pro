@@ -1,10 +1,16 @@
 import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Package, Pencil, Plus, Trash2, Truck, Wallet } from "lucide-react";
+import { ArrowLeft, CalendarPlus, Package, Pencil, Plus, Trash2, Truck, Wallet } from "lucide-react";
 import { getMedicineDetail } from "@/lib/api/medicines.functions";
 import { listSuppliers } from "@/lib/api/suppliers.functions";
-import { BatchEditDialog, DeleteBatchDialog, type EditableBatch } from "@/components/batch-dialogs";
+import {
+  AddExpiryQuantityDialog,
+  BatchEditDialog,
+  DeleteBatchDialog,
+  type EditableBatch,
+  type ExpiryStockBatch,
+} from "@/components/batch-dialogs";
 import { StatCard } from "@/components/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +29,7 @@ function MedicineDetailPage() {
   const [batchDialogOpen, setBatchDialogOpen] = useState(false);
   const [editingBatch, setEditingBatch] = useState<EditableBatch | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; batchNo: string } | null>(null);
+  const [expiryTarget, setExpiryTarget] = useState<ExpiryStockBatch | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["medicine-detail-page", id],
@@ -155,6 +162,14 @@ function MedicineDetailPage() {
                     <TableCell>{b.supplierName || "—"}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Add expiry stock"
+                          onClick={() => setExpiryTarget({ id: b.id, batchNo: b.batchNo, mrp: b.mrp, quantity: b.quantity })}
+                        >
+                          <CalendarPlus className="h-4 w-4" />
+                        </Button>
                         <Button variant="ghost" size="icon" onClick={() => openEditBatch(b)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
@@ -258,6 +273,15 @@ function MedicineDetailPage() {
         onSaved={invalidate}
       />
       <DeleteBatchDialog batch={deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)} onDeleted={invalidate} />
+      <AddExpiryQuantityDialog
+        open={!!expiryTarget}
+        onOpenChange={(open) => !open && setExpiryTarget(null)}
+        medicineId={id}
+        medicineName={m.name}
+        pack={m.pack}
+        batch={expiryTarget}
+        onSaved={invalidate}
+      />
     </div>
   );
 }
