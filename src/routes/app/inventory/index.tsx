@@ -731,10 +731,15 @@ function Inventory() {
         onOpenChange={setAddExpiryOpen}
         onSaved={() => {
           // The medicine picked here is independent of `batchesFor`, so invalidate every
-          // batch list rather than just the one the row dialog last opened.
+          // batch list rather than just the one the row dialog last opened. The write-off
+          // moves stock, so the stock ledger and summary go stale too.
           queryClient.invalidateQueries({ queryKey: ["batches-for-medicine"] });
+          queryClient.invalidateQueries({ queryKey: ["batches"] });
+          queryClient.invalidateQueries({ queryKey: ["expired-totals"] });
           queryClient.invalidateQueries({ queryKey: ["medicines"] });
           queryClient.invalidateQueries({ queryKey: ["expiry-dashboard"] });
+          queryClient.invalidateQueries({ queryKey: ["stock-movements"] });
+          queryClient.invalidateQueries({ queryKey: ["stock-summary"] });
         }}
       />
       <AddExpiryQuantityDialog

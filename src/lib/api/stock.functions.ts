@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { eq, desc, asc, sql } from "drizzle-orm";
+import { and, eq, desc, asc, sql } from "drizzle-orm";
 import { batches, medicines, suppliers, stockMovements } from "../db/schema";
 import { withTenant } from "../db/tenant.server";
 import { requireUserId } from "../auth/require-user.server";
@@ -37,6 +37,25 @@ export const listBatchesForMedicine = createServerFn({ method: "GET" })
         .leftJoin(suppliers, eq(suppliers.id, batches.supplierId))
         .where(eq(batches.medicineId, data.medicineId))
         .orderBy(asc(batches.expiryDate)),
+    );
+  });
+
+// Running total of stock already written off as expired, per batch, for one medicine. Comes from
+// the movement ledger rather than a column on `batches` because that ledger *is* the expired total —
+// a batch's own quantity only ever tracks what's still sellable, and drops as write-offs happen.
+export const getExpiredTotalsForMedicine = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ medicineId: z.number() }))
+  .handler(async ({ data }) => {
+    const userId = await requireUserId();
+    return withTenant(userId, async (db) =>
+      db
+        .select({
+          batchId: stockMovements.batchId,
+          expiredQuantity: sql<number>`coalesce(sum(${stockMovements.quantity}), 0)::int`,
+        })
+        .from(stockMovements)
+        .where(and(eq(stockMovements.medicineId, data.medicineId), eq(stockMovements.type, "expired")))
+        .groupBy(stockMovements.batchId),
     );
   });
 
