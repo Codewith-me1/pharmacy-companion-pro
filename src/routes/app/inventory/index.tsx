@@ -18,6 +18,7 @@ import {
   type ExpiryStockBatch,
 } from "@/components/batch-dialogs";
 import { AddBatchDialog } from "@/components/add-batch-dialog";
+import { AddExpiryStockDialog } from "@/components/add-expiry-stock-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -105,6 +106,7 @@ function Inventory() {
   const [deleteBatchTarget, setDeleteBatchTarget] = useState<{ id: number; batchNo: string } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
   const [addBatchOpen, setAddBatchOpen] = useState(false);
+  const [addExpiryOpen, setAddExpiryOpen] = useState(false);
   const [expiryQtyTarget, setExpiryQtyTarget] = useState<ExpiryStockBatch | null>(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -224,6 +226,9 @@ function Inventory() {
         <div className="flex gap-2">
         <Button variant="outline" onClick={() => setAddBatchOpen(true)}>
           <CalendarClock className="h-4 w-4" /> Add Batch
+        </Button>
+        <Button variant="outline" onClick={() => setAddExpiryOpen(true)}>
+          <CalendarPlus className="h-4 w-4" /> Add Expiry
         </Button>
         <ImportCsvDialog
           entityName="Medicine"
@@ -717,6 +722,17 @@ function Inventory() {
         open={addBatchOpen}
         onOpenChange={setAddBatchOpen}
         onSaved={() => {
+          queryClient.invalidateQueries({ queryKey: ["medicines"] });
+          queryClient.invalidateQueries({ queryKey: ["expiry-dashboard"] });
+        }}
+      />
+      <AddExpiryStockDialog
+        open={addExpiryOpen}
+        onOpenChange={setAddExpiryOpen}
+        onSaved={() => {
+          // The medicine picked here is independent of `batchesFor`, so invalidate every
+          // batch list rather than just the one the row dialog last opened.
+          queryClient.invalidateQueries({ queryKey: ["batches-for-medicine"] });
           queryClient.invalidateQueries({ queryKey: ["medicines"] });
           queryClient.invalidateQueries({ queryKey: ["expiry-dashboard"] });
         }}
