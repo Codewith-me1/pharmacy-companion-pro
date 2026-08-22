@@ -124,8 +124,11 @@ function Inventory() {
 
   function invalidateBatches() {
     queryClient.invalidateQueries({ queryKey: ["batches-for-medicine", batchesFor?.id] });
+    queryClient.invalidateQueries({ queryKey: ["expired-totals"] });
     queryClient.invalidateQueries({ queryKey: ["medicines"] });
     queryClient.invalidateQueries({ queryKey: ["expiry-dashboard"] });
+    queryClient.invalidateQueries({ queryKey: ["stock-movements"] });
+    queryClient.invalidateQueries({ queryKey: ["stock-summary"] });
   }
 
   function openAddBatchFor() {
@@ -681,8 +684,16 @@ function Inventory() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        title="Add expiry stock"
-                        onClick={() => setExpiryQtyTarget({ id: b.id, batchNo: b.batchNo, mrp: b.mrp, quantity: b.quantity })}
+                        title="Add expiry — write off expired stock"
+                        onClick={() =>
+                          setExpiryQtyTarget({
+                            id: b.id,
+                            batchNo: b.batchNo,
+                            mrp: b.mrp,
+                            quantity: b.quantity,
+                            purchasePrice: b.purchasePrice,
+                          })
+                        }
                       >
                         <CalendarPlus className="h-4 w-4" />
                       </Button>

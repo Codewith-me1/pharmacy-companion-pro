@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { createBatch, updateBatch, deleteBatch, recordStockMovement } from "@/lib/api/stock.functions";
+import {
+  createBatch,
+  updateBatch,
+  deleteBatch,
+  getExpiredTotalsForMedicine,
+  recordStockMovement,
+} from "@/lib/api/stock.functions";
 import { formatInr } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -234,12 +240,14 @@ export interface ExpiryStockBatch {
   batchNo: string;
   mrp: number;
   quantity: number;
+  purchasePrice?: number;
 }
 
-// Deliberately narrower than BatchEditDialog: this is for the specific, common case of "more of
-// this batch turned up than the system shows" (sold from the wrong batch, never entered, etc.) —
-// nothing about the batch itself is editable here, only its quantity. Name/Batch/MRP/Pack are
-// shown read-only purely as confirmation that you're adding to the right thing.
+// Recording stock that has expired. The quantity entered is REMOVED from this batch's sellable
+// stock and written off as expired — that write-off is what carries it onto the Expiry dashboard
+// and onto the return claim for the batch's supplier. Deliberately narrower than BatchEditDialog:
+// nothing about the batch itself is editable here. Name/Batch/MRP/Pack are shown read-only purely
+// as confirmation that you're writing off the right thing.
 export function AddExpiryQuantityDialog({
   open,
   onOpenChange,
@@ -257,11 +265,22 @@ export function AddExpiryQuantityDialog({
   batch: ExpiryStockBatch | null;
   onSaved: () => void;
 }) {
-  const [addQty, setAddQty] = useState(0);
+  const [expiredQty, setExpiredQty] = useState(0);
 
   useEffect(() => {
-    if (open) setAddQty(0);
+    if (open) setExpiredQty(0);
   }, [open, batch]);
+
+  const { data: expiredTotals } = useQuery({
+    queryKey: ["expired-totals", medicineId],
+    queryFn: () => getExpiredTotalsForMedicine({ data: { medicineId } }),
+    // Callers that aren't scoped to a medicine pass 0 as a placeholder.
+    enabled: open && medicineId > 0,
+  });
+  const expiredForBatch = expiredTotals?.find((t) => t.batchId === batch?.id)?.expiredQuantity ?? 0;
+  const stock = batch?.quantity ?? 0;
+  // recordStockMovement rejects a negative resulting stock; catch it before the round-trip.
+  const exceedsStock = batch != null && expiredQty > stock;
 
   const saveMutation = useMutation({
     mutationFn: () =>
@@ -269,28 +288,29 @@ export function AddExpiryQuantityDialog({
         data: {
           medicineId,
           batchId: batch!.id,
-          type: "in",
-          quantity: addQty,
-          reason: "Added to expiry stock count",
+          type: "expired",
+          quantity: expiredQty,
+          reason: "Expired stock written off",
         },
       }),
     onSuccess: () => {
-      toast.success(`Added ${addQty} to batch ${batch?.batchNo}.`);
+      toast.success(`Wrote off ${expiredQty} expired from batch ${batch?.batchNo}.`);
       onOpenChange(false);
       onSaved();
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to add stock."),
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to record expired stock."),
   });
 
   return (
     <Dialog open={open && !!batch} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add Expiry Stock</DialogTitle>
+          <DialogTitle>Add Expiry</DialogTitle>
         </DialogHeader>
         <p className="text-xs text-muted-foreground">
-          For when more of this batch turns up than the system shows — e.g. it was sold from the wrong batch, or
-          never entered. This only adds to the existing quantity; nothing else about the batch changes.
+          Records stock from this batch that has expired. The quantity is{" "}
+          <span className="font-medium text-foreground">subtracted from sellable stock</span> and written off as
+          expired, so it shows on the Expiry dashboard against this batch's supplier.
         </p>
         <div className="grid grid-cols-2 gap-3 text-sm">
           <ReadOnlyField label="Name" value={medicineName} />
@@ -298,24 +318,52 @@ export function AddExpiryQuantityDialog({
           <ReadOnlyField label="MRP" value={formatInr(batch?.mrp ?? 0)} />
           <ReadOnlyField label="Pack" value={pack || "—"} />
         </div>
-        <div className="rounded-md border border-dashed border-border p-3">
-          <p className="text-xs text-muted-foreground">Current Total</p>
-          <p className="text-lg font-semibold">{batch?.quantity ?? 0}</p>
+        <div className="grid grid-cols-2 gap-3 rounded-md border border-dashed border-border p-3">
+          <div>
+            <p className="text-xs text-muted-foreground">Current Stock</p>
+            <p className="text-lg font-semibold">{stock}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Already Written Off</p>
+            <p className="text-lg font-semibold">{expiredForBatch}</p>
+          </div>
         </div>
-        <Field label="Quantity to Add">
+        <Field label="Expired Quantity">
           <Input
             type="number"
             placeholder="0"
-            value={addQty || ""}
-            onChange={(e) => setAddQty(Math.max(0, Number(e.target.value)))}
+            value={expiredQty || ""}
+            onChange={(e) => setExpiredQty(Math.max(0, Number(e.target.value)))}
           />
         </Field>
-        <p className="text-sm text-muted-foreground">
-          New Total: <span className="font-semibold text-foreground">{(batch?.quantity ?? 0) + addQty}</span>
-        </p>
+        {exceedsStock && (
+          <p className="text-xs font-medium text-destructive">
+            Only {stock} in stock for this batch — can't write off more than that.
+          </p>
+        )}
+        <div className="grid grid-cols-3 gap-3 rounded-md bg-muted/40 p-3 text-sm">
+          <div>
+            <p className="text-xs text-muted-foreground">Stock After</p>
+            <p className="text-base font-semibold">{Math.max(0, stock - expiredQty)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Total Written Off</p>
+            <p className="text-base font-semibold">{expiredForBatch + expiredQty}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Write-off Value</p>
+            <p className="text-base font-semibold">
+              {batch?.purchasePrice != null ? formatInr(expiredQty * batch.purchasePrice) : "—"}
+            </p>
+          </div>
+        </div>
         <DialogFooter>
-          <Button onClick={() => saveMutation.mutate()} disabled={!batch || addQty <= 0 || saveMutation.isPending}>
-            Add to Stock
+          <Button
+            variant="destructive"
+            onClick={() => saveMutation.mutate()}
+            disabled={!batch || expiredQty <= 0 || exceedsStock || saveMutation.isPending}
+          >
+            Add Expiry
           </Button>
         </DialogFooter>
       </DialogContent>
