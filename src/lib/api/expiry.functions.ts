@@ -39,11 +39,14 @@ export const getExpiryDashboard = createServerFn({ method: "GET" }).handler(asyn
       .from(batches)
       .innerJoin(medicines, sql`${medicines.id} = ${batches.medicineId}`)
       .leftJoin(suppliers, sql`${suppliers.id} = ${batches.supplierId}`)
-      // A batch stays on the dashboard once it has expired stock written off against it, even
-      // after its sellable quantity has been drawn down to zero — that written-off stock is
-      // exactly what still has to be returned to the supplier.
+      // Two independent reasons to be on this dashboard:
+      //   1. stock still on the shelf that expires within the 90-day horizon, and
+      //   2. ANY write-off, whatever the batch's expiry date or remaining quantity.
+      // The horizon must not gate (2): a batch expiring years from now that has been written off
+      // is expiry stock today, and stock drawn down to zero by write-offs is exactly what still
+      // has to go back to the supplier. Gating both together hid every such row.
       .where(
-        sql`(${batches.quantity} > 0 or ${expiredQuantity} > 0) and ${batches.expiryDate}::date <= CURRENT_DATE + 90`,
+        sql`(${batches.quantity} > 0 and ${batches.expiryDate}::date <= CURRENT_DATE + 90) or ${expiredQuantity} > 0`,
       )
       .orderBy(sql`${batches.expiryDate} asc`);
 

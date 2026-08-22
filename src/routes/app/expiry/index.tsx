@@ -366,9 +366,11 @@ function ExpiryPage() {
                       <TableCell>{item.supplierName || "—"}</TableCell>
                       <TableCell>{formatDate(item.expiryDate)}</TableCell>
                       <TableCell className="text-right">
-                        <Badge variant="destructive">
-                          {item.daysToExpiry < 0 ? `${Math.abs(item.daysToExpiry)}d ago` : `${item.daysToExpiry}d left`}
-                        </Badge>
+                        {item.daysToExpiry < 0 ? (
+                          <Badge variant="destructive">{Math.abs(item.daysToExpiry)}d ago</Badge>
+                        ) : (
+                          <Badge variant="secondary">written off early</Badge>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">{item.quantity}</TableCell>
                       <TableCell className="text-right">
