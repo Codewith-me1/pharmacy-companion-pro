@@ -214,6 +214,10 @@ export function AddExpiryStockDialog({
               <ReadOnlyField label="Pack" value={medicine?.pack || "—"} />
               <ReadOnlyField label="Current Stock" value={String(selectedBatch.quantity)} />
               <ReadOnlyField label="Already Expired" value={String(expiredForBatch)} />
+              <div className="col-span-2">
+                <p className="text-xs text-muted-foreground">Supplier — expiry stock is credited here</p>
+                <p className="font-medium">{selectedBatch.supplierName || "No supplier recorded on this batch"}</p>
+              </div>
             </div>
 
             <div className="flex flex-col gap-1">

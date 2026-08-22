@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AlertTriangle, Download, IndianRupee, Pencil, Plus, Search, SearchCheck, Trash2, Truck } from "lucide-react";
+import { AlertTriangle, Download, IndianRupee, PackageX, Pencil, Plus, Search, SearchCheck, Trash2, Truck } from "lucide-react";
 import { getExpiryDashboard } from "@/lib/api/expiry.functions";
 import { getBusinessSettings } from "@/lib/api/business-settings.functions";
 import { listMedicines } from "@/lib/api/medicines.functions";
@@ -295,7 +295,7 @@ function ExpiryPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatCard
           label="Expiring This Month"
           value={String(data.expiringThisMonthCount)}
@@ -303,7 +303,14 @@ function ExpiryPage() {
           tone="warning"
         />
         <StatCard label="Estimated Loss (30 days)" value={formatInr(data.totalEstimatedLoss)} icon={IndianRupee} tone="danger" />
-        <StatCard label="Already Expired" value={String(data.expired.length)} icon={AlertTriangle} tone="danger" />
+        <StatCard label="Already Expired" value={String(data.expired.length)} sub="batches" icon={AlertTriangle} tone="danger" />
+        <StatCard
+          label="Expiry Stock Written Off"
+          value={String(data.totalExpiredQuantity)}
+          sub={`units · ${formatInr(data.totalExpiredValue)} to recover`}
+          icon={PackageX}
+          tone="danger"
+        />
       </div>
 
       <div className="relative max-w-sm">
@@ -338,7 +345,8 @@ function ExpiryPage() {
                     <TableHead>Supplier</TableHead>
                     <TableHead>Expiry</TableHead>
                     <TableHead className="text-right">Days Expired</TableHead>
-                    <TableHead className="text-right">Qty</TableHead>
+                    <TableHead className="text-right">On Shelf</TableHead>
+                    <TableHead className="text-right">Written Off</TableHead>
                     <TableHead className="text-right">Est. Loss</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -346,7 +354,7 @@ function ExpiryPage() {
                 <TableBody>
                   {filteredExpired.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={8} className="p-8 text-center text-muted-foreground">
+                      <TableCell colSpan={9} className="p-8 text-center text-muted-foreground">
                         Nothing already expired — or it's already been cleared out.
                       </TableCell>
                     </TableRow>
@@ -358,9 +366,18 @@ function ExpiryPage() {
                       <TableCell>{item.supplierName || "—"}</TableCell>
                       <TableCell>{formatDate(item.expiryDate)}</TableCell>
                       <TableCell className="text-right">
-                        <Badge variant="destructive">{Math.abs(item.daysToExpiry)}d ago</Badge>
+                        <Badge variant="destructive">
+                          {item.daysToExpiry < 0 ? `${Math.abs(item.daysToExpiry)}d ago` : `${item.daysToExpiry}d left`}
+                        </Badge>
                       </TableCell>
                       <TableCell className="text-right">{item.quantity}</TableCell>
+                      <TableCell className="text-right">
+                        {item.expiredQuantity > 0 ? (
+                          <Badge variant="destructive">{item.expiredQuantity}</Badge>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right font-mono">{formatInr(item.estimatedLoss)}</TableCell>
                       <TableCell className="text-right">
                         <RowActions onEdit={() => openEditRow(item)} onDelete={() => setDeleteTarget({ id: item.id, batchNo: item.batchNo })} />
@@ -443,9 +460,15 @@ function ExpiryPage() {
                       <Truck className="h-4 w-4 text-muted-foreground" />
                       {supplier.supplierName}
                       <Badge variant="secondary">{supplier.items.length} expiring</Badge>
+                      {supplier.expiredQuantity > 0 && (
+                        <Badge variant="destructive">{supplier.expiredQuantity} expired units</Badge>
+                      )}
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="text-sm text-muted-foreground">Est. loss {formatInr(supplier.estimatedLoss)}</span>
+                      <span className="text-sm text-muted-foreground">
+                        Est. loss {formatInr(supplier.estimatedLoss)}
+                        {supplier.expiredValue > 0 && ` · ${formatInr(supplier.expiredValue)} expired`}
+                      </span>
                       <Button
                         size="sm"
                         variant="outline"
@@ -458,7 +481,7 @@ function ExpiryPage() {
                             items: supplier.items.map((i) => ({
                               medicineName: i.medicineName,
                               pack: i.pack,
-                              quantity: i.quantity,
+                              quantity: i.expiredQuantity > 0 ? i.expiredQuantity : i.quantity,
                               batchNo: i.batchNo,
                               expiryDate: i.expiryDate,
                               mrp: i.mrp,
@@ -476,7 +499,8 @@ function ExpiryPage() {
                         <TableHead>Medicine</TableHead>
                         <TableHead>Batch</TableHead>
                         <TableHead>Expiry</TableHead>
-                        <TableHead className="text-right">Qty</TableHead>
+                        <TableHead className="text-right">On Shelf</TableHead>
+                        <TableHead className="text-right">Written Off</TableHead>
                         <TableHead className="text-right">MRP</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
@@ -488,6 +512,13 @@ function ExpiryPage() {
                           <TableCell>{item.batchNo}</TableCell>
                           <TableCell>{formatDate(item.expiryDate)}</TableCell>
                           <TableCell className="text-right">{item.quantity}</TableCell>
+                          <TableCell className="text-right">
+                            {item.expiredQuantity > 0 ? (
+                              <Badge variant="destructive">{item.expiredQuantity}</Badge>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right font-mono">{formatInr(item.mrp)}</TableCell>
                           <TableCell className="text-right">
                             <RowActions onEdit={() => openEditRow(item)} onDelete={() => setDeleteTarget({ id: item.id, batchNo: item.batchNo })} />
