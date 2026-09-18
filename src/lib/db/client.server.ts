@@ -2,6 +2,7 @@ import process from "node:process";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import * as schema from "./schema";
+import { sslConfigFor } from "./ssl.server";
 
 // Server-only. Never imported from client code (see config.server.ts convention).
 let pool: Pool | undefined;
@@ -10,28 +11,34 @@ function getPool() {
   if (!pool) {
     // APP_DATABASE_URL connects as a restricted role with no BYPASSRLS — required for the
     // per-tenant Row-Level Security policies (see tenant.server.ts) to actually be enforced.
-    // DATABASE_URL (the admin/migration role) is used only as a fallback for environments that
-    // haven't provisioned the restricted role — RLS silently no-ops for that role, so it must
-    // never be relied on for real multi-tenant deployments.
+    // DATABASE_URL is the admin/migration role: on Supabase that is `postgres`, which carries
+    // rolbypassrls = true, so every tenant policy silently stops applying and one pharmacy can
+    // read another's data. That fallback is therefore refused outright in production rather than
+    // left as a quietly insecure default.
     const connectionString = process.env.APP_DATABASE_URL || process.env.DATABASE_URL;
     if (!connectionString) {
       throw new Error("APP_DATABASE_URL (or DATABASE_URL) is not set. Add it to your .env file (see .env.example).");
     }
-    // Managed Postgres providers (Aiven, Supabase, Neon, RDS, etc.) require TLS and reject
-    // plaintext connections outright. Local Docker/native Postgres has no TLS configured at
-    // all, so only enable it for non-local hosts.
-    const isLocalHost = /(^|@)(localhost|127\.0\.0\.1)(:|\/)/.test(connectionString);
-    // On Vercel, every concurrent request can land in its own serverless container with its
-    // own module scope — i.e. its own Pool. Aiven's free/starter tier caps max_connections at
-    // 20 total, shared across every container. A `max` of 5 here means as few as 4 concurrent
-    // containers can exhaust the entire database's connection budget, which surfaces as the
-    // exact same generic "Failed query" error on totally unrelated, trivially correct queries.
-    // Keep each container's own pool small and release idle connections fast so slots return
-    // to Aiven quickly instead of being held by frozen/idle containers.
+    if (!process.env.APP_DATABASE_URL) {
+      const message =
+        "APP_DATABASE_URL is not set, so the app would connect with the admin role. That role can " +
+        "bypass Row-Level Security, which disables every per-pharmacy isolation policy. " +
+        "Provision the restricted role (npm run db:provision-app-role) and set APP_DATABASE_URL.";
+      if (process.env.NODE_ENV === "production") throw new Error(message);
+      console.warn(`[DB SECURITY] ${message}`);
+    }
+    // On Vercel, every concurrent request can land in its own serverless container with its own
+    // module scope — i.e. its own Pool. Connections go through Supabase's Supavisor pooler, which
+    // multiplexes them onto a much smaller set of real Postgres backends, but each container's
+    // own pool should still stay small and hand connections back quickly so a frozen container
+    // does not sit on a client slot.
     const isServerless = Boolean(process.env.VERCEL);
     pool = new Pool({
       connectionString,
-      ssl: isLocalHost ? undefined : { rejectUnauthorized: false },
+      ssl: sslConfigFor(connectionString),
+      // Names this app in pg_stat_activity and Supabase's dashboard, so a runaway query can be
+      // attributed to it rather than to an anonymous connection.
+      application_name: "medios-pharmacy",
       // Without these, a stalled connection attempt (network blip, provider-side idle
       // disconnect, etc.) can hang a request indefinitely instead of failing fast, and a
       // dropped idle connection can throw an unhandled error that crashes the process.
@@ -41,7 +48,7 @@ function getPool() {
       keepAlive: true,
       // Let the pool release its connection instead of keeping the process alive once idle —
       // matters on serverless, where a container can otherwise sit frozen holding a slot that
-      // never gets returned to Aiven until the container is eventually recycled.
+      // never gets returned to the pooler until the container is eventually recycled.
       allowExitOnIdle: isServerless,
     });
     pool.on("error", (err) => {
@@ -62,7 +69,7 @@ function getPool() {
           return Promise.resolve(result);
         }
         return (result as Promise<unknown>).catch((err: NodeJS.ErrnoException & Record<string, unknown>) => {
-          // Connection-acquisition failures (Aiven's connection cap hit by concurrent serverless
+          // Connection-acquisition failures (the pooler's client-connection cap hit by concurrent serverless
           // containers, a momentary network blip) are transient — a slot frees up milliseconds
           // later as other containers finish. Retry once before giving up; anything else (bad
           // SQL, constraint violation, etc.) fails immediately since retrying won't help.

@@ -24,7 +24,11 @@ dist-ssr
 .vercel
 
 # Env / local database
+# `.env` alone matches only that exact name — every sibling (.env.local, .env.production,
+# .env.backup-*, …) would otherwise be committed with live credentials in it.
 .env
+.env.*
+!.env.example
 mediOS.db
 mediOS.db-*
 

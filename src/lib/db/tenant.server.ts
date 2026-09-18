@@ -15,7 +15,16 @@ export async function withTenant<T>(
 ): Promise<T> {
   const db = getDb();
   return db.transaction(async (tx) => {
-    await tx.execute(sql`select set_config('app.current_user_id', ${String(userId)}, true)`);
+    // All three are set in ONE round trip, and all are transaction-local (set_config's third
+    // argument): with the database behind a transaction pooler the underlying backend is shared
+    // with other tenants between transactions, so anything set non-locally would leak across
+    // them. The two timeouts bound the damage a pathological query or an abandoned transaction
+    // can do — without them a single stuck statement holds a pooler slot indefinitely.
+    await tx.execute(
+      sql`select set_config('app.current_user_id', ${String(userId)}, true),
+                 set_config('statement_timeout', '15s', true),
+                 set_config('idle_in_transaction_session_timeout', '10s', true)`,
+    );
     return fn(tx as unknown as ReturnType<typeof getDb>);
   });
 }

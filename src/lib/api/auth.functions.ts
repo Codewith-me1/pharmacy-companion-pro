@@ -4,8 +4,16 @@ import { eq } from "drizzle-orm";
 import { getDb } from "../db/client.server";
 import { withTenant } from "../db/tenant.server";
 import { users, businessSettings } from "../db/schema";
-import { hashPassword, verifyPassword } from "../auth/password.server";
+import { hashPassword, verifyPassword, needsRehash } from "../auth/password.server";
 import { getSessionUserId, setSessionUser, clearSessionUser } from "../auth/session.server";
+import {
+  assertNotRateLimited,
+  clearRateLimit,
+  clientIp,
+  loginRules,
+  registerFailure,
+  signupRules,
+} from "../auth/rate-limit.server";
 
 export const getCurrentUser = createServerFn({ method: "GET" }).handler(async () => {
   const userId = await getSessionUserId();
@@ -34,6 +42,11 @@ export const signup = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const db = getDb();
     const email = data.email.trim().toLowerCase();
+    // Caps automated account creation from a single source; a real pharmacy signs up once.
+    const rules = signupRules(clientIp());
+    await assertNotRateLimited(rules);
+    await registerFailure(rules);
+
     const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
     if (existing) {
       throw new Error("An account with this email already exists. Try logging in instead.");
@@ -67,14 +80,37 @@ export const login = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const db = getDb();
     const email = data.email.trim().toLowerCase();
+    const rules = loginRules(email, clientIp());
+    // Throws (and the attempt never reaches the password check) once this account or address has
+    // burned through its allowance — see rate-limit.server.ts.
+    await assertNotRateLimited(rules);
+
     const [user] = await db.select().from(users).where(eq(users.email, email));
     if (!user) {
+      await registerFailure(rules);
+      // Deliberately identical to the wrong-password message: a distinct "no such account" reply
+      // turns this endpoint into a way to enumerate which pharmacies are registered.
       throw new Error("Invalid email or password.");
     }
     const ok = await verifyPassword(data.password, user.passwordHash);
     if (!ok) {
+      await registerFailure(rules);
       throw new Error("Invalid email or password.");
     }
+
+    await clearRateLimit(rules);
+
+    // The password is only available in plaintext at this instant, so this is the one chance to
+    // re-hash an old weak-parameter record. Failure here must not fail the login.
+    if (needsRehash(user.passwordHash)) {
+      try {
+        const upgraded = await hashPassword(data.password);
+        await db.update(users).set({ passwordHash: upgraded }).where(eq(users.id, user.id));
+      } catch (err) {
+        console.error("[AUTH] password rehash failed:", (err as Error).message);
+      }
+    }
+
     await setSessionUser(user.id);
     return { id: user.id };
   });

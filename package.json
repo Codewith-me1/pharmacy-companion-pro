@@ -14,6 +14,9 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx --env-file=.env src/lib/db/seed.ts",
+    "db:provision-app-role": "tsx --env-file=.env scripts/provision-app-role.ts",
+    "db:verify-security": "tsx --env-file=.env scripts/verify-db-security.ts",
+    "db:migrate-data": "tsx --env-file=.env scripts/migrate-data.ts",
     "db:reset": "tsx --env-file=.env src/lib/db/reset.ts && npm run db:push && npm run db:seed"
   },
   "dependencies": {

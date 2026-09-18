@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, integer, doublePrecision, boolean, serial } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, doublePrecision, boolean, serial, uniqueIndex } from "drizzle-orm/pg-core";
 
 const id = () => serial("id").primaryKey();
 const createdAt = () =>
@@ -262,3 +262,22 @@ export const stockMovements = pgTable("stock_movements", {
   referenceId: integer("reference_id"),
   createdAt: createdAt(),
 });
+
+// Deliberately NOT tenant-scoped (no ownerId, no RLS): brute-force protection has to work before
+// anyone is authenticated, so there is no tenant context to scope it by. Rows are keyed by
+// (bucket, identifier) — e.g. ("login:email", "owner@pharmacy.test") and ("login:ip", "1.2.3.4") —
+// so an attacker spraying one account and one spraying many accounts from one address are both
+// caught. Timestamps are ISO-8601 UTC strings to match the rest of the schema, which also makes
+// lexicographic comparison in SQL a valid chronological comparison.
+export const rateLimits = pgTable(
+  "rate_limits",
+  {
+    id: id(),
+    bucket: text("bucket").notNull(),
+    identifier: text("identifier").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    windowStartedAt: text("window_started_at").notNull(),
+    lockedUntil: text("locked_until"),
+  },
+  (table) => [uniqueIndex("rate_limits_bucket_identifier_idx").on(table.bucket, table.identifier)],
+);
