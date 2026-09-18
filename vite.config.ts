@@ -7,6 +7,19 @@
 import process from "node:process";
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
+// Load .env into process.env for the SERVER side of the app.
+//
+// The bundled config calls Vite's loadEnv(mode, cwd, "VITE_"), which only turns VITE_-prefixed
+// values into `import.meta.env.*` defines for the CLIENT bundle. Nothing populates process.env,
+// so server code — the database pool, the session secret, the OCR keys — saw nothing at all under
+// `vite dev`, and connecting failed before it could even try. Deployment platforms inject these
+// as real environment variables, so a missing .env here is not an error.
+try {
+  process.loadEnvFile?.(".env");
+} catch {
+  /* no .env on disk — use whatever the real environment provides */
+}
+
 export default defineConfig({
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
