@@ -17,6 +17,7 @@
     "db:provision-app-role": "tsx --env-file=.env scripts/provision-app-role.ts",
     "db:verify-security": "tsx --env-file=.env scripts/verify-db-security.ts",
     "db:doctor": "tsx --env-file-if-exists=.env scripts/db-doctor.ts",
+    "db:verify-dashboard": "tsx --env-file=.env scripts/verify-dashboard.ts",
     "db:migrate-data": "tsx --env-file=.env scripts/migrate-data.ts",
     "db:reset": "tsx --env-file=.env src/lib/db/reset.ts && npm run db:push && npm run db:seed"
   },

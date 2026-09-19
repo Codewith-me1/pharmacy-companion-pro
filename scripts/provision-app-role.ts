@@ -70,6 +70,11 @@ const statements = [
   `alter default privileges in schema public grant usage, select on sequences to ${ROLE}`,
   // The app must never create objects; DDL is the migration role's job alone.
   `revoke create on schema public from ${ROLE}`,
+  // Safety timeouts as ROLE DEFAULTS rather than per-transaction SETs. Postgres applies them when
+  // the connection is established, so they bound a runaway query or an abandoned transaction
+  // exactly as before but without spending a network round trip on every single request.
+  `alter role ${ROLE} set statement_timeout = '15s'`,
+  `alter role ${ROLE} set idle_in_transaction_session_timeout = '10s'`,
 ];
 for (const sql of statements) {
   await client.query(sql);

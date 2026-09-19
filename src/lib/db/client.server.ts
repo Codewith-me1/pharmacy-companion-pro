@@ -7,7 +7,7 @@ import { sslConfigFor } from "./ssl.server";
 // Server-only. Never imported from client code (see config.server.ts convention).
 let pool: Pool | undefined;
 
-function getPool() {
+export function getPool() {
   if (!pool) {
     // APP_DATABASE_URL connects as a restricted role with no BYPASSRLS — required for the
     // per-tenant Row-Level Security policies (see tenant.server.ts) to actually be enforced.
@@ -43,7 +43,13 @@ function getPool() {
       // disconnect, etc.) can hang a request indefinitely instead of failing fast, and a
       // dropped idle connection can throw an unhandled error that crashes the process.
       max: isServerless ? 1 : 5,
-      idleTimeoutMillis: isServerless ? 3_000 : 10_000,
+      // Opening a connection costs a TCP handshake, a TLS handshake and authentication — measured
+      // at ~1000-1350ms against the current region, i.e. longer than everything else a request
+      // does put together. The old 10s idle timeout threw that connection away between clicks, so
+      // a pharmacist working at a normal pace (an action every 20-30 seconds) paid the full
+      // reconnect on almost every action. Holding idle connections open for minutes instead makes
+      // all but the first action of a session reuse a warm connection.
+      idleTimeoutMillis: isServerless ? 60_000 : 300_000,
       connectionTimeoutMillis: 10_000,
       keepAlive: true,
       // Let the pool release its connection instead of keeping the process alive once idle —

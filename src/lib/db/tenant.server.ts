@@ -1,5 +1,6 @@
-import { sql } from "drizzle-orm";
-import { getDb } from "./client.server";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { getDb, getPool } from "./client.server";
+import * as schema from "./schema";
 
 // Every tenant-scoped table has Row-Level Security enabled with a policy that only allows
 // seeing/writing rows where owner_id = current_setting('app.current_user_id'). Running a
@@ -9,22 +10,61 @@ import { getDb } from "./client.server";
 // isolation itself: even a forgotten WHERE clause in application code cannot leak another
 // tenant's rows, and INSERTs without an explicit ownerId get it from the column default, which
 // reads the same session variable.
+//
+// The connection is checked out and driven directly rather than through drizzle's `.transaction()`
+// because that helper sends BEGIN as its own statement. Every statement is a full network round
+// trip (measured at ~150-185ms to the current region), so a handler doing one query cost four of
+// them: BEGIN, set_config, the query, COMMIT — three quarters of it overhead. Sending BEGIN and
+// set_config together as a single simple query removes one round trip from every tenant-scoped
+// request in the app.
 export async function withTenant<T>(
   userId: number,
   fn: (db: ReturnType<typeof getDb>) => Promise<T>,
 ): Promise<T> {
-  const db = getDb();
-  return db.transaction(async (tx) => {
-    // All three are set in ONE round trip, and all are transaction-local (set_config's third
-    // argument): with the database behind a transaction pooler the underlying backend is shared
-    // with other tenants between transactions, so anything set non-locally would leak across
-    // them. The two timeouts bound the damage a pathological query or an abandoned transaction
-    // can do — without them a single stuck statement holds a pooler slot indefinitely.
-    await tx.execute(
-      sql`select set_config('app.current_user_id', ${String(userId)}, true),
-                 set_config('statement_timeout', '15s', true),
-                 set_config('idle_in_transaction_session_timeout', '10s', true)`,
+  // The combined statement cannot use bind parameters (the simple query protocol has none), so
+  // the id is interpolated — which makes this check the thing standing between a session value
+  // and SQL injection. userId comes from the sealed session cookie, but validate it regardless:
+  // the cost is nothing and the failure mode is total.
+  if (!Number.isInteger(userId) || userId <= 0) {
+    throw new Error(`withTenant called with an invalid user id: ${JSON.stringify(userId)}`);
+  }
+
+  const client = await getPool().connect();
+  try {
+    // All of it in ONE round trip. The timeouts are also set as defaults on the medios_app role
+    // (scripts/provision-app-role.ts), but Supavisor hands out backend sessions that were opened
+    // before those defaults existed — a live connection reported statement_timeout=2min and
+    // idle_in_transaction_session_timeout=0 despite the role setting — so the role default cannot
+    // be relied on. Setting them here transaction-locally is authoritative and, folded into this
+    // statement, free.
+    await client.query(
+      `begin; select set_config('app.current_user_id', '${userId}', true),` +
+        ` set_config('statement_timeout', '15s', true),` +
+        ` set_config('idle_in_transaction_session_timeout', '10s', true);`,
     );
-    return fn(tx as unknown as ReturnType<typeof getDb>);
-  });
+
+    const tx = drizzle(client, { schema }) as unknown as ReturnType<typeof getDb>;
+    const result = await fn(tx);
+
+    await client.query("commit");
+    return result;
+  } catch (error) {
+    // Roll back on any failure. A rollback that itself fails (connection already gone) must not
+    // mask the original error.
+    await client.query("rollback").catch(() => {});
+    const err = error as NodeJS.ErrnoException & Record<string, unknown>;
+    console.error("[DB TENANT TX FAILED]", {
+      userId,
+      message: err?.message,
+      code: err?.code,
+      detail: err?.detail,
+      table: err?.table,
+      constraint: err?.constraint,
+    });
+    throw error;
+  } finally {
+    // Always hand the connection back, including when the handler threw. Without this the pool
+    // leaks a connection per failure and the app wedges after `max` of them.
+    client.release();
+  }
 }
