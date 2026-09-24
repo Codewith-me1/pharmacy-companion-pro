@@ -308,7 +308,8 @@ function SalesPos() {
                           {b.pack ? ` (${b.pack})` : ""}
                         </span>
                         <span className="text-xs text-muted-foreground">
-                          Batch {b.batchNo} · {b.supplierName || "—"} · {formatInr(b.mrp)}
+                          Batch {b.batchNo} · Exp {formatDate(b.expiryDate)} · {b.supplierName || "—"} ·{" "}
+                          {formatInr(b.mrp)}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
@@ -367,24 +368,25 @@ function SalesPos() {
         )}
 
         <Card>
-          <CardContent className="p-0">
+          <CardContent className="overflow-x-auto p-0">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Medicine</TableHead>
-                  <TableHead>Batch</TableHead>
-                  <TableHead>Supplier</TableHead>
-                  <TableHead className="text-right">Price</TableHead>
-                  <TableHead className="text-right">Qty</TableHead>
-                  <TableHead className="text-right">GST%</TableHead>
-                  <TableHead className="text-right">Line Total</TableHead>
-                  <TableHead />
+                  <TableHead className="min-w-[180px]">Medicine</TableHead>
+                  <TableHead className="whitespace-nowrap">Batch</TableHead>
+                  <TableHead className="whitespace-nowrap">Expiry</TableHead>
+                  <TableHead className="whitespace-nowrap">Supplier</TableHead>
+                  <TableHead className="w-24 text-right">Price</TableHead>
+                  <TableHead className="w-20 text-right">Qty</TableHead>
+                  <TableHead className="w-20 text-right">GST%</TableHead>
+                  <TableHead className="w-28 whitespace-nowrap text-right">Line Total</TableHead>
+                  <TableHead className="w-12" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {cart.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} className="p-10 text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="p-10 text-center text-muted-foreground">
                       <ShoppingCart className="mx-auto mb-2 h-6 w-6" />
                       Cart is empty. Search a medicine to begin billing.
                     </TableCell>
@@ -393,21 +395,28 @@ function SalesPos() {
                 {cart.map((l) => (
                   <TableRow key={l.key}>
                     <TableCell className="font-medium">{l.medicineName}</TableCell>
-                    <TableCell>{l.batchNo}</TableCell>
-                    <TableCell className="text-muted-foreground">{l.supplierName || "—"}</TableCell>
+                    <TableCell className="whitespace-nowrap">{l.batchNo}</TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {formatDate(l.expiryDate)}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {l.supplierName || "—"}
+                    </TableCell>
                     <TableCell className="text-right">
                       <Input
                         type="number"
-                        className="w-20 text-right"
-                        value={l.salePrice}
+                        placeholder="0"
+                        className="ml-auto w-24 text-right"
+                        value={l.salePrice || ""}
                         onChange={(e) => updateLine(l.key, { salePrice: Number(e.target.value) })}
                       />
                     </TableCell>
                     <TableCell className="text-right">
                       <Input
                         type="number"
-                        className="w-16 text-right"
-                        value={l.quantity}
+                        placeholder="0"
+                        className="ml-auto w-20 text-right"
+                        value={l.quantity || ""}
                         max={l.availableQty}
                         onChange={(e) => updateLine(l.key, { quantity: Math.min(Number(e.target.value), l.availableQty) })}
                       />
@@ -415,12 +424,15 @@ function SalesPos() {
                     <TableCell className="text-right">
                       <Input
                         type="number"
-                        className="w-16 text-right"
-                        value={l.gstPercent}
+                        placeholder="0"
+                        className="ml-auto w-20 text-right"
+                        value={l.gstPercent || ""}
                         onChange={(e) => updateLine(l.key, { gstPercent: Number(e.target.value) })}
                       />
                     </TableCell>
-                    <TableCell className="text-right font-mono">{formatInr(l.salePrice * l.quantity)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right font-mono">
+                      {formatInr(l.salePrice * l.quantity)}
+                    </TableCell>
                     <TableCell>
                       <Button variant="ghost" size="icon" onClick={() => removeLine(l.key)}>
                         <Trash2 className="h-4 w-4" />
@@ -567,7 +579,12 @@ function SalesPos() {
             </div>
             <div className="flex flex-col gap-1">
               <Label className="text-xs text-muted-foreground">Discount (₹)</Label>
-              <Input type="number" value={discount} onChange={(e) => setDiscount(Number(e.target.value))} />
+              <Input
+                type="number"
+                placeholder="0"
+                value={discount || ""}
+                onChange={(e) => setDiscount(Number(e.target.value))}
+              />
             </div>
           </CardContent>
         </Card>

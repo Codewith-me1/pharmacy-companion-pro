@@ -41,6 +41,16 @@ export const listMedicines = createServerFn({ method: "GET" })
             select greatest(count(*)::int - 1, 0) from ${batches}
             where ${batches.medicineId} = ${medicines.id} and ${batches.quantity} > 0
           )`,
+          // Who supplied that same primary batch. A medicine is bought from whoever had it that
+          // week, so this is a property of the batch on the shelf, not of the medicine — which is
+          // why it is read from the identical batch primaryBatchNo names rather than joined at the
+          // medicine level.
+          primarySupplierName: sql<string | null>`(
+            select ${suppliers.name} from ${batches}
+            left join ${suppliers} on ${suppliers.id} = ${batches.supplierId}
+            where ${batches.medicineId} = ${medicines.id} and ${batches.quantity} > 0
+            order by ${batches.expiryDate} asc limit 1
+          )`,
         })
         .from(medicines)
         .leftJoin(batches, eq(batches.medicineId, medicines.id))

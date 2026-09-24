@@ -528,7 +528,7 @@ function Inventory() {
                 <TableHead>Medicine</TableHead>
                 <TableHead>Pack</TableHead>
                 <TableHead>Batch No.</TableHead>
-                <TableHead>Manufacturer</TableHead>
+                <TableHead>Supplier</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead className="text-right">GST%</TableHead>
                 <TableHead className="text-right">MRP</TableHead>
@@ -566,7 +566,7 @@ function Inventory() {
                       "—"
                     )}
                   </TableCell>
-                  <TableCell>{m.company || "—"}</TableCell>
+                  <TableCell>{m.primarySupplierName || "—"}</TableCell>
                   <TableCell>{m.category || "—"}</TableCell>
                   <TableCell className="text-right">{m.gstPercent}%</TableCell>
                   <TableCell className="text-right font-mono">{formatInr(m.mrp)}</TableCell>

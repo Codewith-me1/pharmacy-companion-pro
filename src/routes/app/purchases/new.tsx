@@ -383,7 +383,8 @@ function NewPurchase() {
                 <Field label="Invoice Total">
                   <Input
                     type="number"
-                    value={draft.invoiceTotal}
+                    placeholder="0"
+                    value={draft.invoiceTotal || ""}
                     onChange={(e) => setDraft({ ...draft, invoiceTotal: Number(e.target.value) })}
                   />
                 </Field>
@@ -416,14 +417,16 @@ function NewPurchase() {
                   <Field label="Tax Amount">
                     <Input
                       type="number"
-                      value={draft.taxAmount}
+                      placeholder="0"
+                      value={draft.taxAmount || ""}
                       onChange={(e) => setDraft({ ...draft, taxAmount: Number(e.target.value) })}
                     />
                   </Field>
                   <Field label="Net Amount">
                     <Input
                       type="number"
-                      value={draft.netAmount}
+                      placeholder="0"
+                      value={draft.netAmount || ""}
                       onChange={(e) => setDraft({ ...draft, netAmount: Number(e.target.value) })}
                     />
                   </Field>
@@ -556,7 +559,8 @@ function NewPurchase() {
                         <Input
                           className="w-16"
                           type="number"
-                          value={item.quantity}
+                          placeholder="0"
+                          value={item.quantity || ""}
                           onChange={(e) => updateItem(i, { quantity: Number(e.target.value) })}
                         />
                       </TableCell>
@@ -565,7 +569,8 @@ function NewPurchase() {
                           <Input
                             className="w-16"
                             type="number"
-                            value={item.freeQty ?? 0}
+                            placeholder="0"
+                            value={item.freeQty || ""}
                             onChange={(e) => updateItem(i, { freeQty: Number(e.target.value) })}
                           />
                         </TableCell>
@@ -574,7 +579,8 @@ function NewPurchase() {
                         <Input
                           className="w-20"
                           type="number"
-                          value={item.purchasePrice}
+                          placeholder="0"
+                          value={item.purchasePrice || ""}
                           onChange={(e) => updateItem(i, { purchasePrice: Number(e.target.value) })}
                         />
                       </TableCell>
@@ -582,7 +588,8 @@ function NewPurchase() {
                         <Input
                           className="w-20"
                           type="number"
-                          value={item.mrp}
+                          placeholder="0"
+                          value={item.mrp || ""}
                           onChange={(e) => updateItem(i, { mrp: Number(e.target.value) })}
                         />
                       </TableCell>
@@ -600,7 +607,8 @@ function NewPurchase() {
                           <Input
                             className="w-16"
                             type="number"
-                            value={item.gstPercent}
+                            placeholder="0"
+                            value={item.gstPercent || ""}
                             onChange={(e) => updateItem(i, { gstPercent: Number(e.target.value) })}
                           />
                         </TableCell>

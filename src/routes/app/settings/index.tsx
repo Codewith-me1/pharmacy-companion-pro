@@ -339,7 +339,8 @@ function EmailIntegrationCard() {
               <Field label="IMAP Port">
                 <Input
                   type="number"
-                  value={form.imapPort}
+                  placeholder="0"
+                  value={form.imapPort || ""}
                   onChange={(e) => setForm({ ...form, imapPort: Number(e.target.value) })}
                 />
               </Field>

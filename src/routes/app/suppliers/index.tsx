@@ -154,7 +154,8 @@ function SuppliersPage() {
               <F label="Credit Days">
                 <Input
                   type="number"
-                  value={form.creditDays}
+                  placeholder="0"
+                  value={form.creditDays || ""}
                   onChange={(e) => setForm({ ...form, creditDays: Number(e.target.value) })}
                 />
               </F>

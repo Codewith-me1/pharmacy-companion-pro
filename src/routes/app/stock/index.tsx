@@ -154,7 +154,12 @@ function StockPage() {
           </div>
           <div className="flex flex-col gap-1">
             <Label className="text-xs text-muted-foreground">{type === "adjustment" ? "New Quantity" : "Quantity"}</Label>
-            <Input type="number" value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} />
+            <Input
+              type="number"
+              placeholder="0"
+              value={quantity || ""}
+              onChange={(e) => setQuantity(Number(e.target.value))}
+            />
           </div>
           <div className="flex flex-col gap-1">
             <Label className="text-xs text-muted-foreground">Reason / Note</Label>
