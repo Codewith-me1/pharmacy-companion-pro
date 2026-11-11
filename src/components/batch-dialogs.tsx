@@ -11,6 +11,7 @@ import {
 import { formatInr } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/date-input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -129,17 +130,16 @@ export function BatchEditDialog({
             />
           </Field>
           <Field label="Expiry Date">
-            <Input
-              type="date"
+            <DateInput
+              mode="expiry"
               value={form.expiryDate}
-              onChange={(e) => setForm({ ...form, expiryDate: e.target.value })}
+              onChange={(v) => setForm({ ...form, expiryDate: v })}
             />
           </Field>
           <Field label="Manufacture Date (optional)">
-            <Input
-              type="date"
+            <DateInput
               value={form.manufactureDate}
-              onChange={(e) => setForm({ ...form, manufactureDate: e.target.value })}
+              onChange={(v) => setForm({ ...form, manufactureDate: v })}
             />
           </Field>
           <Field label="Purchase Price">

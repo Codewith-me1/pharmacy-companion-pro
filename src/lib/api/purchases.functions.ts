@@ -1,12 +1,22 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { eq, desc, sql, ilike } from "drizzle-orm";
-import { purchases, purchaseItems, medicines, batches, suppliers, stockMovements } from "../db/schema";
+import { eq, desc, sql, ilike, inArray } from "drizzle-orm";
+import {
+  purchases,
+  purchaseItems,
+  medicines,
+  batches,
+  suppliers,
+  stockMovements,
+  creditNotes,
+  creditNoteApplications,
+} from "../db/schema";
 import { getServerConfig } from "../config.server";
 import { withTenant } from "../db/tenant.server";
 import { requireUserId } from "../auth/require-user.server";
 import { analyzeInvoiceLayout } from "../azure-document-intelligence.server";
 import type { getDb } from "../db/client.server";
+import { allocateCreditNotes, purchaseBillTotal } from "../purchase-math";
 
 // Every field is `.nullable()` rather than `.optional()`, and confidence has no `.default()` —
 // OpenAI's Structured Outputs (strict JSON schema mode) requires every property to always be
@@ -408,13 +418,25 @@ export const savePurchase = createServerFn({ method: "POST" })
       sourceLabel: z.string().optional(),
       overallConfidence: z.number().optional(),
       items: z.array(draftItemInput),
+      // Open credit notes of this supplier to deduct from the bill, in the order to apply them.
+      creditNoteIds: z.array(z.number()).default([]),
     }),
   )
   .handler(async ({ data }) => {
     const userId = await requireUserId();
     return withTenant(userId, async (db) => {
       let supplierId = data.supplier.id;
-      if (!supplierId && data.supplier.name) {
+      if (!supplierId && data.supplier.name.trim()) {
+        // A manually typed name that matches an existing supplier is that supplier — creating a
+        // second record would split its purchase history and hide its open credit notes.
+        const [existing] = await db
+          .select({ id: suppliers.id })
+          .from(suppliers)
+          .where(sql`lower(trim(${suppliers.name})) = lower(trim(${data.supplier.name}))`)
+          .limit(1);
+        supplierId = existing?.id ?? null;
+      }
+      if (!supplierId && data.supplier.name.trim()) {
         const inserted = await db
           .insert(suppliers)
           .values({
@@ -531,7 +553,46 @@ export const savePurchase = createServerFn({ method: "POST" })
         }
       }
 
-      return { purchaseId: purchase.id };
+      let creditNoteAmount = 0;
+      if (data.creditNoteIds.length > 0) {
+        if (!supplierId)
+          throw new Error("Credit notes can only be deducted from a bill with a supplier.");
+        // Row locks: two bills saved at once can't both spend the same remaining balance.
+        const locked = await db
+          .select()
+          .from(creditNotes)
+          .where(inArray(creditNotes.id, data.creditNoteIds))
+          .for("update");
+        const byId = new Map(locked.map((n) => [n.id, n]));
+        const ordered = data.creditNoteIds.map((id) => {
+          const note = byId.get(id);
+          if (!note) throw new Error(`Credit note #${id} no longer exists.`);
+          if (note.supplierId !== supplierId) {
+            throw new Error(
+              `Credit note ${note.noteNumber ?? `#${id}`} belongs to a different supplier.`,
+            );
+          }
+          return { id: note.id, remaining: note.amount - note.appliedAmount };
+        });
+
+        const billTotal = purchaseBillTotal({ invoiceTotal: data.invoiceTotal, items: data.items });
+        for (const { note, amount } of allocateCreditNotes(billTotal, ordered)) {
+          await db
+            .update(creditNotes)
+            .set({ appliedAmount: sql`${creditNotes.appliedAmount} + ${amount}` })
+            .where(eq(creditNotes.id, note.id));
+          await db
+            .insert(creditNoteApplications)
+            .values({ creditNoteId: note.id, purchaseId: purchase.id, amount });
+          creditNoteAmount += amount;
+        }
+        creditNoteAmount = Math.round(creditNoteAmount * 100) / 100;
+        if (creditNoteAmount > 0) {
+          await db.update(purchases).set({ creditNoteAmount }).where(eq(purchases.id, purchase.id));
+        }
+      }
+
+      return { purchaseId: purchase.id, creditNoteAmount };
     });
   });
 
@@ -545,6 +606,7 @@ export const listPurchases = createServerFn({ method: "GET" }).handler(async () 
         invoiceDate: purchases.invoiceDate,
         billNumber: purchases.billNumber,
         invoiceTotal: purchases.invoiceTotal,
+        creditNoteAmount: purchases.creditNoteAmount,
         status: purchases.status,
         ocrConfidence: purchases.ocrConfidence,
         createdAt: purchases.createdAt,

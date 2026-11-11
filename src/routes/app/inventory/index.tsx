@@ -21,6 +21,7 @@ import { AddBatchDialog } from "@/components/add-batch-dialog";
 import { AddExpiryStockDialog } from "@/components/add-expiry-stock-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/date-input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -443,11 +444,7 @@ function Inventory() {
                         />
                       </F>
                       <F label="Expiry Date">
-                        <Input
-                          type="date"
-                          value={form.expiryDate}
-                          onChange={(e) => setForm({ ...form, expiryDate: e.target.value })}
-                        />
+                        <DateInput mode="expiry" value={form.expiryDate} onChange={(v) => setForm({ ...form, expiryDate: v })} />
                       </F>
                       <F label="Supplier">
                         <Select

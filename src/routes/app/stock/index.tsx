@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { listMedicines } from "@/lib/api/medicines.functions";
 import { listBatchesForMedicine, listStockMovements, recordStockMovement, stockSummary } from "@/lib/api/stock.functions";
 import { AddBatchDialog } from "@/components/add-batch-dialog";
+import { ImportBatchesDialog } from "@/components/import-batches-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -80,9 +81,12 @@ function StockPage() {
             Stock in/out, adjustments, transfers, damage, loss, expiry and returns — all in one place.
           </p>
         </div>
-        <Button onClick={() => setAddBatchOpen(true)}>
-          <Plus className="h-4 w-4" /> Add Batch
-        </Button>
+        <div className="flex gap-2">
+          <ImportBatchesDialog onImported={invalidateAfterBatchAdd} />
+          <Button onClick={() => setAddBatchOpen(true)}>
+            <Plus className="h-4 w-4" /> Add Batch
+          </Button>
+        </div>
       </div>
 
       {summary && (

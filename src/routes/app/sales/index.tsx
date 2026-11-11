@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Barcode, Dices, Plus, Printer, Search, ShoppingCart, Trash2 } from "lucide-react";
+import { Barcode, Dices, Pencil, Plus, Printer, Search, ShoppingCart, Trash2 } from "lucide-react";
 import { listMedicines, searchMedicineBatches } from "@/lib/api/medicines.functions";
 import { listBatchesForMedicine } from "@/lib/api/stock.functions";
 import { listDoctors, getDoctorWithMedicines } from "@/lib/api/doctors.functions";
@@ -11,6 +11,7 @@ import { createSale } from "@/lib/api/sales.functions";
 import { getBusinessSettings } from "@/lib/api/business-settings.functions";
 import { getBillSettings } from "@/lib/api/bill-settings.functions";
 import { printBill, type PrintBillData } from "@/lib/print-bill";
+import { BillEditorDialog } from "@/components/bill-editor-dialog";
 import { generateRandomCustomerName } from "@/lib/random-name";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -70,10 +71,15 @@ function SalesPos() {
   const [doctorPickerOpen, setDoctorPickerOpen] = useState(false);
   const doctorBoxRef = useRef<HTMLDivElement>(null);
   const [hospitalName, setHospitalName] = useState("");
-  const [billType, setBillType] = useState<"retail" | "gst" | "wholesale" | "estimate" | "quotation" | "credit">("retail");
-  const [paymentMode, setPaymentMode] = useState<"cash" | "upi" | "card" | "credit" | "split">("cash");
-  const [discount, setDiscount] = useState(0);
+  const [billType, setBillType] = useState<
+    "retail" | "gst" | "wholesale" | "estimate" | "quotation" | "credit"
+  >("retail");
+  const [paymentMode, setPaymentMode] = useState<"cash" | "upi" | "card" | "credit" | "split">(
+    "cash",
+  );
+  const [discountPercent, setDiscountPercent] = useState(0);
   const [lastBill, setLastBill] = useState<PrintBillData | null>(null);
+  const [editingBill, setEditingBill] = useState<PrintBillData | null>(null);
   const [batchPicker, setBatchPicker] = useState<{
     medicineId: number;
     medicineName: string;
@@ -136,8 +142,11 @@ function SalesPos() {
       if (existing) {
         return c.map((l) => (l.batchId === batch.id ? { ...l, quantity: l.quantity + defaultQty } : l));
       }
-      const discountPercent = batch.discount ?? 0;
-      const salePrice = discountPercent > 0 ? Number((batch.mrp * (1 - discountPercent / 100)).toFixed(2)) : batch.mrp;
+      const batchDiscountPercent = batch.discount ?? 0;
+      const salePrice =
+        batchDiscountPercent > 0
+          ? Number((batch.mrp * (1 - batchDiscountPercent / 100)).toFixed(2))
+          : batch.mrp;
       return [
         ...c,
         {
@@ -188,7 +197,9 @@ function SalesPos() {
 
   const subtotal = cart.reduce((s, l) => s + l.salePrice * l.quantity, 0);
   const gstAmount = cart.reduce((s, l) => s + (l.salePrice * l.quantity * l.gstPercent) / 100, 0);
-  const total = subtotal + gstAmount - discount;
+  // Rounded to paise here so the figure shown on screen is the exact figure stored on the bill.
+  const discountAmount = Number(((subtotal * discountPercent) / 100).toFixed(2));
+  const total = subtotal + gstAmount - discountAmount;
 
   const saleMutation = useMutation({
     mutationFn: () =>
@@ -201,7 +212,7 @@ function SalesPos() {
           hospitalName: hospitalName.trim() || undefined,
           billType,
           paymentMode,
-          discount,
+          discount: discountAmount,
           items: cart.map((l) => ({
             medicineId: l.medicineId,
             batchId: l.batchId,
@@ -237,11 +248,11 @@ function SalesPos() {
           rate: l.salePrice,
           mrp: l.mrp,
         })),
-        discount,
+        discount: discountAmount,
         settings: billSettings,
       });
       setCart([]);
-      setDiscount(0);
+      setDiscountPercent(0);
       setCustomerId(null);
       setCustomerName(generateRandomCustomerName());
       setDoctorId(null);
@@ -578,12 +589,17 @@ function SalesPos() {
               </Select>
             </div>
             <div className="flex flex-col gap-1">
-              <Label className="text-xs text-muted-foreground">Discount (₹)</Label>
+              <Label className="text-xs text-muted-foreground">Discount (%)</Label>
               <Input
                 type="number"
                 placeholder="0"
-                value={discount || ""}
-                onChange={(e) => setDiscount(Number(e.target.value))}
+                min={0}
+                max={100}
+                step="0.01"
+                value={discountPercent || ""}
+                onChange={(e) =>
+                  setDiscountPercent(Math.min(100, Math.max(0, Number(e.target.value))))
+                }
               />
             </div>
           </CardContent>
@@ -593,7 +609,10 @@ function SalesPos() {
           <CardContent className="flex flex-col gap-2 p-4 text-sm">
             <Row label="Subtotal" value={formatInr(subtotal)} />
             <Row label="GST" value={formatInr(gstAmount)} />
-            <Row label="Discount" value={`- ${formatInr(discount)}`} />
+            <Row
+              label={discountPercent > 0 ? `Discount (${discountPercent}%)` : "Discount"}
+              value={`- ${formatInr(discountAmount)}`}
+            />
             <div className="border-t border-border pt-2">
               <Row label="Total" value={formatInr(total)} bold />
             </div>
@@ -643,13 +662,26 @@ function SalesPos() {
                   Math.round(lastBill.items.reduce((s, i) => s + i.rate * i.quantity, 0) - lastBill.discount),
                 )}
               </p>
-              <Button onClick={() => printBill(lastBill)}>
-                <Printer className="h-4 w-4" /> Print Bill
-              </Button>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setEditingBill(lastBill);
+                    setLastBill(null);
+                  }}
+                >
+                  <Pencil className="h-4 w-4" /> Edit &amp; Print
+                </Button>
+                <Button onClick={() => printBill(lastBill)}>
+                  <Printer className="h-4 w-4" /> Print Bill
+                </Button>
+              </div>
             </div>
           )}
         </DialogContent>
       </Dialog>
+
+      <BillEditorDialog bill={editingBill} onOpenChange={(open) => !open && setEditingBill(null)} />
 
       <Dialog open={!!batchPicker} onOpenChange={(open) => !open && setBatchPicker(null)}>
         <DialogContent className="max-w-2xl">

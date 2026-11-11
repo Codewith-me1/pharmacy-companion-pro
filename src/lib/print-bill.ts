@@ -38,6 +38,88 @@ export const DEFAULT_BILL_CUSTOMIZATION: BillCustomization = {
   customFields: [],
 };
 
+export type BillColumnKey =
+  | "sno"
+  | "description"
+  | "pack"
+  | "batch"
+  | "expiry"
+  | "qty"
+  | "rate"
+  | "mrp"
+  | "discount"
+  | "amount";
+
+export const BILL_COLUMNS: { key: BillColumnKey; label: string }[] = [
+  { key: "sno", label: "S.No" },
+  { key: "description", label: "Item Description" },
+  { key: "pack", label: "Packing" },
+  { key: "batch", label: "Batch No." },
+  { key: "expiry", label: "Expiry" },
+  { key: "qty", label: "Qty" },
+  { key: "rate", label: "Rate" },
+  { key: "mrp", label: "MRP" },
+  { key: "discount", label: "Dis%" },
+  { key: "amount", label: "Amount" },
+];
+
+export type BillSectionKey =
+  | "firmHeader"
+  | "licence"
+  | "phone"
+  | "copyLabel"
+  | "patient"
+  | "customerAddress"
+  | "doctor"
+  | "invoiceNo"
+  | "date"
+  | "footerNote"
+  | "terms"
+  | "customFields"
+  | "signature"
+  | "totalsBreakdown"
+  | "duplicateCopy";
+
+export const BILL_SECTIONS: { key: BillSectionKey; label: string }[] = [
+  { key: "firmHeader", label: "Pharmacy name & address" },
+  { key: "licence", label: "D.L. / GST number" },
+  { key: "phone", label: "Phone" },
+  { key: "copyLabel", label: "Original/Duplicate label" },
+  { key: "patient", label: "Patient name" },
+  { key: "customerAddress", label: "Patient address" },
+  { key: "doctor", label: "Doctor / hospital" },
+  { key: "invoiceNo", label: "Invoice number" },
+  { key: "date", label: "Date" },
+  { key: "footerNote", label: "Footer note" },
+  { key: "terms", label: "Terms & conditions" },
+  { key: "customFields", label: "Custom fields" },
+  { key: "signature", label: "Signature block" },
+  { key: "totalsBreakdown", label: "Sub total / adjustments / round off" },
+  { key: "duplicateCopy", label: "Duplicate copy" },
+];
+
+// One-off print adjustments made in the bill editor. When present it decides which columns and
+// sections appear, instead of the saved bill settings' show* switches (the editor starts from
+// those, see layoutFromSettings). `plain` drops the table grid lines and boxes for a plain list.
+export type BillLayout = {
+  plain: boolean;
+  hiddenColumns: BillColumnKey[];
+  hiddenSections: BillSectionKey[];
+};
+
+export function layoutFromSettings(settings: BillCustomization | null | undefined): BillLayout {
+  const s = settings ?? DEFAULT_BILL_CUSTOMIZATION;
+  const hiddenColumns: BillColumnKey[] = [];
+  if (!s.showBatchNo) hiddenColumns.push("batch");
+  if (!s.showExpiry) hiddenColumns.push("expiry");
+  if (!s.showMrp) hiddenColumns.push("mrp");
+  if (!s.showDiscountPercent) hiddenColumns.push("discount");
+  const hiddenSections: BillSectionKey[] = [];
+  if (!s.showDoctor) hiddenSections.push("doctor");
+  if (!s.showCustomerAddress) hiddenSections.push("customerAddress");
+  return { plain: false, hiddenColumns, hiddenSections };
+}
+
 export type PrintBillData = {
   billNumber: string;
   billType: string;
@@ -54,6 +136,7 @@ export type PrintBillData = {
   items: PrintBillItem[];
   discount: number;
   settings?: BillCustomization | null;
+  layout?: BillLayout | null;
 };
 
 function esc(value: string) {
@@ -81,47 +164,54 @@ function referrerLine(bill: PrintBillData): string {
   return `<strong>Prescribed by Dr:</strong> —`;
 }
 
-type Col = { header: string; align: "left" | "center" | "right"; cell: (item: PrintBillItem, i: number) => string };
+type Col = {
+  key: BillColumnKey;
+  header: string;
+  align: "left" | "center" | "right";
+  cell: (item: PrintBillItem, i: number) => string;
+};
 
-function buildColumns(settings: BillCustomization): Col[] {
-  const cols: Col[] = [
-    { header: "S.No", align: "center", cell: (_item, i) => String(i + 1) },
-    { header: "Item Description", align: "left", cell: (item) => esc(item.medicineName) },
-    { header: "Packing", align: "center", cell: (item) => esc(item.pack || "—") },
-  ];
-  if (settings.showBatchNo) {
-    cols.push({ header: "Batch No.", align: "center", cell: (item) => esc(item.batchNo || "—") });
-  }
-  if (settings.showExpiry) {
-    cols.push({ header: "Exp.", align: "center", cell: (item) => formatExpiry(item.expiryDate) });
-  }
-  cols.push({ header: "Qty", align: "center", cell: (item) => String(item.quantity) });
-  cols.push({ header: "Rate", align: "right", cell: (item) => money(item.rate) });
-  if (settings.showMrp) {
-    cols.push({ header: "MRP", align: "right", cell: (item) => money(item.mrp) });
-  }
-  if (settings.showDiscountPercent) {
-    cols.push({
-      header: "Dis%",
-      align: "right",
-      cell: (item) => {
-        const disPercent = item.mrp > 0 ? ((item.mrp - item.rate) / item.mrp) * 100 : 0;
-        return disPercent.toFixed(2);
-      },
-    });
-  }
-  cols.push({ header: "Amount", align: "right", cell: (item) => money(item.rate * item.quantity) });
-  return cols;
-}
+const ALL_COLUMNS: Col[] = [
+  { key: "sno", header: "S.No", align: "center", cell: (_item, i) => String(i + 1) },
+  {
+    key: "description",
+    header: "Item Description",
+    align: "left",
+    cell: (item) => esc(item.medicineName),
+  },
+  { key: "pack", header: "Packing", align: "center", cell: (item) => esc(item.pack || "—") },
+  { key: "batch", header: "Batch No.", align: "center", cell: (item) => esc(item.batchNo || "—") },
+  { key: "expiry", header: "Exp.", align: "center", cell: (item) => formatExpiry(item.expiryDate) },
+  { key: "qty", header: "Qty", align: "center", cell: (item) => String(item.quantity) },
+  { key: "rate", header: "Rate", align: "right", cell: (item) => money(item.rate) },
+  { key: "mrp", header: "MRP", align: "right", cell: (item) => money(item.mrp) },
+  {
+    key: "discount",
+    header: "Dis%",
+    align: "right",
+    cell: (item) => {
+      const disPercent = item.mrp > 0 ? ((item.mrp - item.rate) / item.mrp) * 100 : 0;
+      return disPercent.toFixed(2);
+    },
+  },
+  {
+    key: "amount",
+    header: "Amount",
+    align: "right",
+    cell: (item) => money(item.rate * item.quantity),
+  },
+];
 
 function renderCopy(bill: PrintBillData, label: "Original Copy" | "Duplicate Copy") {
   const settings = bill.settings ?? DEFAULT_BILL_CUSTOMIZATION;
+  const layout = bill.layout ?? layoutFromSettings(settings);
+  const show = (section: BillSectionKey) => !layout.hiddenSections.includes(section);
   const subtotal = bill.items.reduce((sum, i) => sum + i.rate * i.quantity, 0);
   const beforeRounding = subtotal - bill.discount;
   const grandTotal = Math.round(beforeRounding);
   const roundOff = grandTotal - beforeRounding;
 
-  const columns = buildColumns(settings);
+  const columns = ALL_COLUMNS.filter((c) => !layout.hiddenColumns.includes(c.key));
   const headerRow = columns.map((c) => `<th>${c.header}</th>`).join("");
   const rows = bill.items
     .map((item, i) => {
@@ -130,15 +220,19 @@ function renderCopy(bill: PrintBillData, label: "Original Copy" | "Duplicate Cop
     })
     .join("");
 
-  const customerLine = `<strong>Patient Name:</strong> ${esc(bill.customerName || "Walk-in Customer")}${
-    settings.showCustomerAddress && bill.customerAddress ? `<br/><span class="muted">${esc(bill.customerAddress)}</span>` : ""
-  }`;
+  const customerLine = show("patient")
+    ? `<strong>Patient Name:</strong> ${esc(bill.customerName || "Walk-in Customer")}${
+        show("customerAddress") && bill.customerAddress
+          ? `<br/><span class="muted">${esc(bill.customerAddress)}</span>`
+          : ""
+      }`
+    : "";
 
   const termsLines = settings.termsText
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean);
-  const customFieldsHtml = settings.customFields
+  const customFieldsHtml = (show("customFields") ? settings.customFields : [])
     .filter((f) => f.label.trim())
     .map((f) => `<p class="custom-field"><strong>${esc(f.label)}:</strong> ${esc(f.value)}</p>`)
     .join("");
@@ -147,28 +241,28 @@ function renderCopy(bill: PrintBillData, label: "Original Copy" | "Duplicate Cop
   <section class="copy">
     <div class="header-row">
       <div class="header-left">
-        ${bill.dlNo ? `D.L. No: ${esc(bill.dlNo)}<br/>` : ""}
-        ${bill.gstNumber ? `GST No: ${esc(bill.gstNumber)}` : ""}
+        ${show("licence") && bill.dlNo ? `D.L. No: ${esc(bill.dlNo)}<br/>` : ""}
+        ${show("licence") && bill.gstNumber ? `GST No: ${esc(bill.gstNumber)}` : ""}
       </div>
       <div class="header-center">
-        <h1>${esc(bill.firmName || "Your Pharmacy Name")}</h1>
-        ${bill.address ? `<p class="muted">${esc(bill.address)}</p>` : ""}
+        ${show("firmHeader") ? `<h1>${esc(bill.firmName || "Your Pharmacy Name")}</h1>` : ""}
+        ${show("firmHeader") && bill.address ? `<p class="muted">${esc(bill.address)}</p>` : ""}
       </div>
       <div class="header-right">
-        <div class="copy-label">${label}</div>
+        ${show("copyLabel") ? `<div class="copy-label">${label}</div>` : ""}
         Sale Bill<br/>
-        ${bill.phone ? `Phone: ${esc(bill.phone)}` : ""}
+        ${show("phone") && bill.phone ? `Phone: ${esc(bill.phone)}` : ""}
       </div>
     </div>
     <hr/>
     <table class="meta-table">
       <tr>
         <td>${customerLine}</td>
-        <td><strong>Invoice No:</strong> ${esc(bill.billNumber)}</td>
+        <td>${show("invoiceNo") ? `<strong>Invoice No:</strong> ${esc(bill.billNumber)}` : ""}</td>
       </tr>
       <tr>
-        <td>${settings.showDoctor ? referrerLine(bill) : ""}</td>
-        <td><strong>Date:</strong> ${esc(bill.createdAt)}</td>
+        <td>${show("doctor") ? referrerLine(bill) : ""}</td>
+        <td>${show("date") ? `<strong>Date:</strong> ${esc(bill.createdAt)}` : ""}</td>
       </tr>
     </table>
 
@@ -181,22 +275,30 @@ function renderCopy(bill: PrintBillData, label: "Original Copy" | "Duplicate Cop
 
     <div class="bottom-row">
       <div class="terms">
-        ${settings.footerNote ? `<p class="footer-note">${esc(settings.footerNote)}</p>` : ""}
+        ${show("footerNote") && settings.footerNote ? `<p class="footer-note">${esc(settings.footerNote)}</p>` : ""}
         ${
-          termsLines.length
+          show("terms") && termsLines.length
             ? `<p class="terms-title">Terms &amp; Conditions</p><ol>${termsLines.map((l) => `<li>${esc(l)}</li>`).join("")}</ol>`
             : ""
         }
         ${customFieldsHtml}
-        <p class="signature-line">for ${esc(bill.firmName || "Your Pharmacy Name")}</p>
+        ${
+          show("signature")
+            ? `<p class="signature-line">for ${esc(bill.firmName || "Your Pharmacy Name")}</p>
         <p class="signature-space">&nbsp;</p>
-        <p class="muted">Authorised Signatory</p>
+        <p class="muted">Authorised Signatory</p>`
+            : ""
+        }
       </div>
       <table class="totals-table">
-        <tr><td>Sub Total</td><td class="right">${money(subtotal)}</td></tr>
+        ${
+          show("totalsBreakdown")
+            ? `<tr><td>Sub Total</td><td class="right">${money(subtotal)}</td></tr>
         <tr><td>CR/DR Note</td><td class="right">0.00</td></tr>
         <tr><td>Other Adj.</td><td class="right">${money(bill.discount)}</td></tr>
-        <tr><td>Round Off</td><td class="right">${money(roundOff)}</td></tr>
+        <tr><td>Round Off</td><td class="right">${money(roundOff)}</td></tr>`
+            : ""
+        }
         <tr class="grand"><td>GRAND TOTAL</td><td class="right">${money(grandTotal)}</td></tr>
       </table>
     </div>
@@ -204,6 +306,7 @@ function renderCopy(bill: PrintBillData, label: "Original Copy" | "Duplicate Cop
 }
 
 export function printBill(bill: PrintBillData) {
+  const layout = bill.layout ?? layoutFromSettings(bill.settings);
   const html = `<!doctype html>
 <html>
 <head>
@@ -241,13 +344,23 @@ export function printBill(bill: PrintBillData) {
   .totals-table { width: 260px; border-collapse: collapse; font-size: 12px; }
   .totals-table td { padding: 3px 4px; }
   .totals-table tr.grand td { font-weight: bold; font-size: 14px; border-top: 1px solid #111; padding-top: 6px; }
+  /* Plain layout: just the data — no outer box, no grid lines or shaded header, only a rule
+     under the column headings so the columns still read as columns. */
+  body.plain .copy { border: none; padding: 4px 0; }
+  body.plain .items-table th, body.plain .items-table td { border: none; padding: 3px 5px; }
+  body.plain .items-table th { background: none; border-bottom: 1px solid #111; }
+  body.plain .totals-table tr.grand td { border-top: none; }
   @media print { @page { margin: 10mm; size: A4; } }
 </style>
 </head>
-<body>
+<body class="${layout.plain ? "plain" : ""}">
   ${renderCopy(bill, "Original Copy")}
-  <div class="cut-line">&#9986; cut here</div>
-  ${renderCopy(bill, "Duplicate Copy")}
+  ${
+    layout.hiddenSections.includes("duplicateCopy")
+      ? ""
+      : `<div class="cut-line">&#9986; cut here</div>
+  ${renderCopy(bill, "Duplicate Copy")}`
+  }
 </body>
 </html>`;
 

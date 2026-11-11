@@ -17,6 +17,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/date-input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -115,10 +116,10 @@ function SalesReportTab() {
     <Card>
       <div className="flex flex-wrap items-end gap-3 p-3 pb-0">
         <FilterField label="From">
-          <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+          <DateInput value={from} onChange={setFrom} />
         </FilterField>
         <FilterField label="To">
-          <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          <DateInput value={to} onChange={setTo} />
         </FilterField>
         <FilterField label="Bill Type">
           <Select value={billType} onValueChange={setBillType}>
@@ -193,10 +194,10 @@ function PurchaseReportTab() {
     <Card>
       <div className="flex flex-wrap items-end gap-3 p-3 pb-0">
         <FilterField label="From">
-          <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+          <DateInput value={from} onChange={setFrom} />
         </FilterField>
         <FilterField label="To">
-          <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          <DateInput value={to} onChange={setTo} />
         </FilterField>
         <FilterField label="Supplier">
           <Input placeholder="Filter by supplier…" value={supplier} onChange={(e) => setSupplier(e.target.value)} />

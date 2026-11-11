@@ -2,17 +2,36 @@ import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CreditCard, Eye, IndianRupee, Printer, Receipt, Search, Smartphone, Wallet } from "lucide-react";
+import {
+  CreditCard,
+  Eye,
+  IndianRupee,
+  Pencil,
+  Printer,
+  Receipt,
+  Search,
+  Smartphone,
+  Wallet,
+} from "lucide-react";
 import { listSales, getSale, getBillingStats } from "@/lib/api/sales.functions";
 import { getBusinessSettings } from "@/lib/api/business-settings.functions";
 import { getBillSettings } from "@/lib/api/bill-settings.functions";
-import { printBill } from "@/lib/print-bill";
+import { printBill, type PrintBillData } from "@/lib/print-bill";
+import { BillEditorDialog } from "@/components/bill-editor-dialog";
 import { StatCard } from "@/components/stat-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DateInput } from "@/components/date-input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatInr, formatDateTime, toDateInputValue } from "@/lib/format";
 
@@ -107,36 +126,53 @@ function BillingPage() {
   const { data: business } = useQuery({ queryKey: ["business-settings"], queryFn: () => getBusinessSettings() });
   const { data: billSettings } = useQuery({ queryKey: ["bill-settings"], queryFn: () => getBillSettings() });
 
+  const [editingBill, setEditingBill] = useState<PrintBillData | null>(null);
+
+  function toPrintData(result: Awaited<ReturnType<typeof getSale>>): PrintBillData | null {
+    if (!result.sale) return null;
+    return {
+      billNumber: result.sale.billNumber,
+      billType: result.sale.billType,
+      createdAt: formatDateTime(result.sale.createdAt),
+      firmName: business?.firmName,
+      dlNo: business?.dlNo,
+      gstNumber: business?.gstNumber,
+      phone: business?.mobile,
+      address: business?.address,
+      customerName: result.sale.customerName,
+      customerAddress: result.sale.customerAddress,
+      doctorName: result.sale.doctorName,
+      hospitalName: result.sale.hospitalName,
+      items: result.items.map((i) => ({
+        medicineName: i.medicineName,
+        pack: i.pack,
+        batchNo: i.batchNo,
+        expiryDate: i.expiryDate,
+        quantity: i.quantity,
+        rate: i.salePrice,
+        mrp: i.mrp,
+      })),
+      discount: result.sale.discount,
+      settings: billSettings,
+    };
+  }
+
+  // `edit` opens the bill editor instead of printing straight away.
   const printMutation = useMutation({
-    mutationFn: (id: number) =>
-      queryClient.fetchQuery({ queryKey: ["sale-detail", id], queryFn: () => getSale({ data: { id } }) }),
-    onSuccess: (result) => {
-      if (!result.sale) return;
-      printBill({
-        billNumber: result.sale.billNumber,
-        billType: result.sale.billType,
-        createdAt: formatDateTime(result.sale.createdAt),
-        firmName: business?.firmName,
-        dlNo: business?.dlNo,
-        gstNumber: business?.gstNumber,
-        phone: business?.mobile,
-        address: business?.address,
-        customerName: result.sale.customerName,
-        customerAddress: result.sale.customerAddress,
-        doctorName: result.sale.doctorName,
-        hospitalName: result.sale.hospitalName,
-        items: result.items.map((i) => ({
-          medicineName: i.medicineName,
-          pack: i.pack,
-          batchNo: i.batchNo,
-          expiryDate: i.expiryDate,
-          quantity: i.quantity,
-          rate: i.salePrice,
-          mrp: i.mrp,
-        })),
-        discount: result.sale.discount,
-        settings: billSettings,
-      });
+    mutationFn: ({ id }: { id: number; edit?: boolean }) =>
+      queryClient.fetchQuery({
+        queryKey: ["sale-detail", id],
+        queryFn: () => getSale({ data: { id } }),
+      }),
+    onSuccess: (result, { edit }) => {
+      const bill = toPrintData(result);
+      if (!bill) return;
+      if (edit) {
+        setSelectedId(null);
+        setEditingBill(bill);
+      } else {
+        printBill(bill);
+      }
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to print bill."),
   });
@@ -163,9 +199,9 @@ function BillingPage() {
         ))}
         {datePreset === "custom" && (
           <div className="flex items-center gap-2">
-            <Input type="date" className="w-40" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
+            <DateInput className="w-40" value={customFrom} onChange={setCustomFrom} />
             <span className="text-sm text-muted-foreground">to</span>
-            <Input type="date" className="w-40" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
+            <DateInput className="w-40" value={customTo} onChange={setCustomTo} />
           </div>
         )}
       </div>
@@ -284,10 +320,22 @@ function BillingPage() {
                         disabled={printMutation.isPending}
                         onClick={(e) => {
                           e.stopPropagation();
-                          printMutation.mutate(s.id);
+                          printMutation.mutate({ id: s.id });
                         }}
                       >
                         <Printer className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="Edit before printing"
+                        disabled={printMutation.isPending}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          printMutation.mutate({ id: s.id, edit: true });
+                        }}
+                      >
+                        <Pencil className="h-4 w-4" />
                       </Button>
                     </div>
                   </TableCell>
@@ -329,13 +377,27 @@ function BillingPage() {
                 <span>Total</span>
                 <span className="font-mono">{formatInr(detail.sale?.total)}</span>
               </div>
-              <Button disabled={printMutation.isPending} onClick={() => selectedId && printMutation.mutate(selectedId)}>
-                <Printer className="h-4 w-4" /> Print
-              </Button>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  disabled={printMutation.isPending}
+                  onClick={() => selectedId && printMutation.mutate({ id: selectedId, edit: true })}
+                >
+                  <Pencil className="h-4 w-4" /> Edit &amp; Print
+                </Button>
+                <Button
+                  disabled={printMutation.isPending}
+                  onClick={() => selectedId && printMutation.mutate({ id: selectedId })}
+                >
+                  <Printer className="h-4 w-4" /> Print
+                </Button>
+              </div>
             </div>
           )}
         </DialogContent>
       </Dialog>
+
+      <BillEditorDialog bill={editingBill} onOpenChange={(open) => !open && setEditingBill(null)} />
     </div>
   );
 }

@@ -2,19 +2,39 @@ import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AlertTriangle, Download, IndianRupee, PackageX, Pencil, Plus, Search, SearchCheck, Trash2, Truck } from "lucide-react";
+import {
+  AlertTriangle,
+  Download,
+  IndianRupee,
+  PackageX,
+  Pencil,
+  Plus,
+  ReceiptText,
+  Search,
+  SearchCheck,
+  Trash2,
+  Truck,
+} from "lucide-react";
 import { getExpiryDashboard } from "@/lib/api/expiry.functions";
 import { getBusinessSettings } from "@/lib/api/business-settings.functions";
 import { listMedicines } from "@/lib/api/medicines.functions";
 import { listSuppliers } from "@/lib/api/suppliers.functions";
 import { createBatch } from "@/lib/api/stock.functions";
+import { listCreditNotes } from "@/lib/api/credit-notes.functions";
+import {
+  CreditNoteDialog,
+  CreditNotesTable,
+  type CreditNoteBatchOption,
+} from "@/components/credit-notes";
 import { BatchEditDialog, DeleteBatchDialog, type EditableBatch } from "@/components/batch-dialogs";
+import { ImportBatchesDialog } from "@/components/import-batches-dialog";
 import { printSupplierReturnReport } from "@/lib/print-supplier-report";
 import { StatCard } from "@/components/stat-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/date-input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -59,8 +79,16 @@ function ExpiryPage() {
   const { data, isLoading } = useExpiryData();
   const { data: business } = useQuery({ queryKey: ["business-settings"], queryFn: () => getBusinessSettings() });
   const { data: suppliers } = useQuery({ queryKey: ["suppliers"], queryFn: () => listSuppliers() });
+  const { data: creditNotes } = useQuery({
+    queryKey: ["credit-notes"],
+    queryFn: () => listCreditNotes(),
+  });
   const [search, setSearch] = useState("");
   const queryClient = useQueryClient();
+  const [creditNoteTarget, setCreditNoteTarget] = useState<{
+    supplierId?: number;
+    batches: CreditNoteBatchOption[];
+  } | null>(null);
 
   const [addOpen, setAddOpen] = useState(false);
   const [medicinePickerOpen, setMedicinePickerOpen] = useState(false);
@@ -126,6 +154,13 @@ function ExpiryPage() {
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ["expiry-dashboard"] });
   }
+
+  function invalidateCreditNotes() {
+    queryClient.invalidateQueries({ queryKey: ["credit-notes"] });
+    queryClient.invalidateQueries({ queryKey: ["open-credit-notes"] });
+  }
+
+  const openCreditTotal = (creditNotes ?? []).reduce((sum, n) => sum + n.remaining, 0);
 
   const filteredBySupplier = data.bySupplier
     .map((s) => ({ ...s, items: s.items.filter((i) => matchesSearch(i, search)) }))
@@ -231,17 +266,16 @@ function ExpiryPage() {
                   />
                 </F>
                 <F label="Expiry Date">
-                  <Input
-                    type="date"
+                  <DateInput
+                    mode="expiry"
                     value={form.expiryDate}
-                    onChange={(e) => setForm({ ...form, expiryDate: e.target.value })}
+                    onChange={(v) => setForm({ ...form, expiryDate: v })}
                   />
                 </F>
                 <F label="Manufacture Date (optional)">
-                  <Input
-                    type="date"
+                  <DateInput
                     value={form.manufactureDate}
-                    onChange={(e) => setForm({ ...form, manufactureDate: e.target.value })}
+                    onChange={(v) => setForm({ ...form, manufactureDate: v })}
                   />
                 </F>
                 <F label="Purchase Price">
@@ -289,6 +323,7 @@ function ExpiryPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          <ImportBatchesDialog onImported={invalidate} />
           <Button variant="outline" onClick={() => window.print()}>
             Print Expiry Report
           </Button>
@@ -332,6 +367,7 @@ function ExpiryPage() {
             </TabsTrigger>
           ))}
           <TabsTrigger value="supplier">By Supplier ({filteredBySupplier.length})</TabsTrigger>
+          <TabsTrigger value="credit-notes">Credit Notes ({creditNotes?.length ?? 0})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="expired">
@@ -474,6 +510,24 @@ function ExpiryPage() {
                       <Button
                         size="sm"
                         variant="outline"
+                        disabled={supplier.supplierId == null}
+                        title={
+                          supplier.supplierId == null
+                            ? "Link these batches to a supplier first"
+                            : undefined
+                        }
+                        onClick={() =>
+                          setCreditNoteTarget({
+                            supplierId: supplier.supplierId ?? undefined,
+                            batches: supplier.items,
+                          })
+                        }
+                      >
+                        <ReceiptText className="h-3.5 w-3.5" /> Add Credit Note
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
                         onClick={() =>
                           printSupplierReturnReport({
                             firmName: business?.firmName,
@@ -529,12 +583,59 @@ function ExpiryPage() {
                       ))}
                     </TableBody>
                   </Table>
+                  {(() => {
+                    const notes = (creditNotes ?? []).filter(
+                      (n) => n.supplierId === supplier.supplierId,
+                    );
+                    if (notes.length === 0) return null;
+                    return (
+                      <div className="flex flex-col gap-1">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          Credit notes from this supplier
+                        </p>
+                        <CreditNotesTable
+                          notes={notes}
+                          showSupplier={false}
+                          onChanged={invalidateCreditNotes}
+                        />
+                      </div>
+                    );
+                  })()}
                 </CardContent>
               </Card>
             ))}
           </div>
         </TabsContent>
+
+        <TabsContent value="credit-notes">
+          <Card>
+            <CardContent className="flex flex-col gap-3 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-muted-foreground">
+                  Open credit balance with suppliers:{" "}
+                  <span className="font-semibold text-foreground">
+                    {formatInr(openCreditTotal)}
+                  </span>{" "}
+                  — deducted automatically from each supplier's next purchase bill.
+                </p>
+                <Button size="sm" onClick={() => setCreditNoteTarget({ batches: [] })}>
+                  <Plus className="h-4 w-4" /> Add Credit Note
+                </Button>
+              </div>
+              <CreditNotesTable notes={creditNotes ?? []} onChanged={invalidateCreditNotes} />
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+
+      <CreditNoteDialog
+        open={creditNoteTarget != null}
+        onOpenChange={(open) => !open && setCreditNoteTarget(null)}
+        suppliers={suppliers}
+        supplierId={creditNoteTarget?.supplierId}
+        batches={creditNoteTarget?.batches}
+        onSaved={invalidateCreditNotes}
+      />
 
       <BatchEditDialog
         open={rowDialogOpen}

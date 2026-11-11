@@ -39,6 +39,8 @@ function PurchasesList() {
                 <TableHead>Date</TableHead>
                 <TableHead>Bill #</TableHead>
                 <TableHead className="text-right">Total</TableHead>
+                <TableHead className="text-right">Credit Note</TableHead>
+                <TableHead className="text-right">Payable</TableHead>
                 <TableHead>OCR Confidence</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
@@ -46,14 +48,14 @@ function PurchasesList() {
             <TableBody>
               {isLoading && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground">
+                  <TableCell colSpan={9} className="text-center text-muted-foreground">
                     Loading…
                   </TableCell>
                 </TableRow>
               )}
               {!isLoading && data?.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="p-8 text-center text-muted-foreground">
+                  <TableCell colSpan={9} className="p-8 text-center text-muted-foreground">
                     No purchases yet. Click "New Purchase" to scan your first invoice.
                   </TableCell>
                 </TableRow>
@@ -64,8 +66,21 @@ function PurchasesList() {
                   <TableCell>{p.supplierName || "—"}</TableCell>
                   <TableCell>{formatDate(p.invoiceDate)}</TableCell>
                   <TableCell>{p.billNumber || "—"}</TableCell>
-                  <TableCell className="text-right font-mono">{formatInr(p.invoiceTotal)}</TableCell>
-                  <TableCell>{p.ocrConfidence != null ? `${Math.round(p.ocrConfidence * 100)}%` : "—"}</TableCell>
+                  <TableCell className="text-right font-mono">
+                    {formatInr(p.invoiceTotal)}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-emerald-600">
+                    {p.creditNoteAmount > 0 ? `− ${formatInr(p.creditNoteAmount)}` : "—"}
+                  </TableCell>
+                  <TableCell className="text-right font-mono">
+                    {/* No printed total entered (manual entry) — there's nothing reliable to subtract from. */}
+                    {p.invoiceTotal > 0
+                      ? formatInr(Math.max(0, p.invoiceTotal - p.creditNoteAmount))
+                      : "—"}
+                  </TableCell>
+                  <TableCell>
+                    {p.ocrConfidence != null ? `${Math.round(p.ocrConfidence * 100)}%` : "—"}
+                  </TableCell>
                   <TableCell>
                     <Badge variant={p.status === "verified" ? "default" : "secondary"}>{p.status}</Badge>
                   </TableCell>

@@ -231,3 +231,159 @@ export const stockSummary = createServerFn({ method: "GET" }).handler(async () =
     return row;
   });
 });
+
+// Batch expiry dates arrive from wholesaler spreadsheets in whatever shape the supplier's system
+// prints: 2027-11-30, 30/11/2027, 30-11-2027, or — most commonly on a strip — just 11/2027 or
+// 11/27. Normalises all of them to YYYY-MM-DD, taking the LAST day of the month for the
+// month-only forms, since a batch marked "11/27" is sellable through the whole of November.
+// Returns null when the value cannot be read as a date at all, so the row is reported rather than
+// silently imported with a wrong expiry.
+export function normaliseExpiryDate(raw: string): string | null {
+  const value = raw.trim();
+  if (!value) return null;
+
+  const lastDayOf = (year: number, month: number) => {
+    if (month < 1 || month > 12) return null;
+    const day = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  };
+  // Two-digit years: pharmacy expiry dates are always in the future, so 27 means 2027.
+  const fullYear = (y: string) => (y.length === 2 ? 2000 + Number(y) : Number(y));
+
+  let m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(value);
+  if (m) {
+    const [, y, mo, d] = m;
+    if (Number(mo) < 1 || Number(mo) > 12 || Number(d) < 1 || Number(d) > 31) return null;
+    return `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+  m = /^(\d{1,2})[/-](\d{1,2})[/-](\d{2}|\d{4})$/.exec(value);
+  if (m) {
+    const [, d, mo, y] = m;
+    if (Number(mo) < 1 || Number(mo) > 12 || Number(d) < 1 || Number(d) > 31) return null;
+    return `${fullYear(y)}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+  m = /^(\d{1,2})[/-](\d{2}|\d{4})$/.exec(value);
+  if (m) {
+    const [, mo, y] = m;
+    return lastDayOf(fullYear(y), Number(mo));
+  }
+  m = /^(\d{4})-(\d{1,2})$/.exec(value);
+  if (m) {
+    const [, y, mo] = m;
+    return lastDayOf(Number(y), Number(mo));
+  }
+  return null;
+}
+
+// Bulk import of opening stock: one row per batch. Deliberately does NOT create medicines it has
+// not seen — a batch needs a medicine's pricing, GST rate and pack to be meaningful, and guessing
+// them from a stock file is how duplicate near-identical medicines get created. Rows naming an
+// unknown medicine are reported so the user can import the medicine master first (Inventory ->
+// Import CSV) and re-run.
+export const bulkImportBatches = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ rows: z.array(z.record(z.string(), z.string())) }))
+  .handler(async ({ data }) => {
+    const userId = await requireUserId();
+    return withTenant(userId, async (db) => {
+      let created = 0;
+      let skipped = 0;
+      const errors: string[] = [];
+
+      // Load the tenant's medicines and suppliers once, rather than a lookup query per row: an
+      // opening-stock file is hundreds of rows and each round trip to the database costs far more
+      // than the comparison does.
+      const knownMedicines = await db.select({ id: medicines.id, name: medicines.name }).from(medicines);
+      const knownSuppliers = await db.select({ id: suppliers.id, name: suppliers.name }).from(suppliers);
+      const medicineByName = new Map(knownMedicines.map((m) => [m.name.trim().toLowerCase(), m.id]));
+      const supplierByName = new Map(knownSuppliers.map((s) => [s.name.trim().toLowerCase(), s.id]));
+
+      const existing = await db
+        .select({ medicineId: batches.medicineId, batchNo: batches.batchNo })
+        .from(batches);
+      const seen = new Set(existing.map((b) => `${b.medicineId}::${b.batchNo.trim().toUpperCase()}`));
+
+      for (const [index, row] of data.rows.entries()) {
+        const rowNumber = index + 2; // +1 for the header row, +1 because spreadsheets start at 1
+        const medicineName = row.medicineName?.trim();
+        const batchNo = row.batchNo?.trim().toUpperCase();
+        const expiryRaw = row.expiryDate?.trim();
+
+        if (!medicineName || !batchNo || !expiryRaw) {
+          skipped++;
+          errors.push(`Row ${rowNumber}: medicine name, batch number and expiry date are all required — skipped.`);
+          continue;
+        }
+
+        const medicineId = medicineByName.get(medicineName.toLowerCase());
+        if (!medicineId) {
+          skipped++;
+          errors.push(
+            `Row ${rowNumber}: no medicine named "${medicineName}" — add it in Inventory first, then re-import.`,
+          );
+          continue;
+        }
+
+        const expiryDate = normaliseExpiryDate(expiryRaw);
+        if (!expiryDate) {
+          skipped++;
+          errors.push(`Row ${rowNumber}: could not read "${expiryRaw}" as an expiry date — skipped.`);
+          continue;
+        }
+
+        // Re-running the same file must not double the stock on hand.
+        const key = `${medicineId}::${batchNo}`;
+        if (seen.has(key)) {
+          skipped++;
+          errors.push(`Row ${rowNumber}: batch ${batchNo} already exists for ${medicineName} — skipped.`);
+          continue;
+        }
+
+        let supplierId: number | undefined;
+        const supplierName = row.supplierName?.trim();
+        if (supplierName) {
+          supplierId = supplierByName.get(supplierName.toLowerCase());
+          if (!supplierId) {
+            // Not fatal: the stock is real even if the supplier record is not set up yet.
+            errors.push(
+              `Row ${rowNumber}: supplier "${supplierName}" not found — batch imported without a supplier.`,
+            );
+          }
+        }
+
+        const quantity = Math.max(0, Math.trunc(Number(row.quantity) || 0));
+        const [batch] = await db
+          .insert(batches)
+          .values({
+            medicineId,
+            batchNo,
+            expiryDate,
+            manufactureDate: row.manufactureDate?.trim()
+              ? (normaliseExpiryDate(row.manufactureDate.trim()) ?? undefined)
+              : undefined,
+            quantity,
+            purchasePrice: Number(row.purchasePrice) || 0,
+            mrp: Number(row.mrp) || 0,
+            supplierId: supplierId ?? null,
+          })
+          .returning();
+
+        // Same ledger entry createBatch writes, so imported stock is accounted for identically to
+        // stock added by hand and the Stock Movements history explains where it came from.
+        if (quantity > 0) {
+          await db.insert(stockMovements).values({
+            medicineId,
+            batchId: batch.id,
+            type: "in",
+            quantity,
+            reason: "Imported from CSV",
+            referenceType: "import",
+          });
+        }
+
+        seen.add(key);
+        created++;
+      }
+
+      return { created, skipped, errors };
+    });
+  });

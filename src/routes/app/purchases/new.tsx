@@ -1,10 +1,24 @@
-import { useState } from "react";
+import { useDeferredValue, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Camera, ChevronDown, ImagePlus, Loader2, Mail, Plus, ScanLine, SearchCheck, SquarePen, Trash2 } from "lucide-react";
+import {
+  Camera,
+  ChevronDown,
+  ImagePlus,
+  Loader2,
+  Mail,
+  Plus,
+  ReceiptText,
+  ScanLine,
+  SearchCheck,
+  SquarePen,
+  Trash2,
+} from "lucide-react";
 import { extractInvoice, savePurchase } from "@/lib/api/purchases.functions";
 import { listMedicines } from "@/lib/api/medicines.functions";
+import { listOpenCreditNotes } from "@/lib/api/credit-notes.functions";
+import { allocateCreditNotes, netLineAmount, purchaseBillTotal } from "@/lib/purchase-math";
 import { fileToBase64 } from "@/lib/file-to-base64";
 import { pdfToImageBlob } from "@/lib/pdf-to-image";
 import { extractPdfText } from "@/lib/pdf-text";
@@ -13,12 +27,15 @@ import { FetchEmailDialog } from "@/components/fetch-email-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/date-input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Checkbox } from "@/components/ui/checkbox";
+import { formatDate, formatInr } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/app/purchases/new")({
@@ -42,14 +59,6 @@ const FLAG_LABELS: Record<string, string> = {
   quantity_mismatch: "Qty issue",
   possible_duplicate_data: "Check vs photo — looks copied",
 };
-
-// Trade discount is applied before GST, matching how suppliers actually compute it on the
-// printed invoice — the "Amount" column and GST value both need to reflect the discounted cost,
-// not the raw rate x quantity.
-function netLineAmount(item: { purchasePrice: number; quantity: number; discount?: number | null }): number {
-  const discountFactor = 1 - (item.discount ?? 0) / 100;
-  return item.purchasePrice * item.quantity * discountFactor;
-}
 
 const emptyDraft: Draft = {
   supplier: { id: null, name: "", gstNumber: "", dlNo: "", address: "" },
@@ -80,6 +89,23 @@ function NewPurchase() {
     queryFn: () => listMedicines({ data: { search: medicineSearch } }),
     enabled: addItemOpen,
   });
+  // Open credit notes from this bill's supplier are deducted by default; the user can untick any
+  // they'd rather keep for a later bill. Tracked as exclusions so newly found notes start ticked.
+  const [excludedNoteIds, setExcludedNoteIds] = useState<number[]>([]);
+  const supplierName = useDeferredValue(draft?.supplier.name.trim() ?? "");
+  const supplierId = draft?.supplier.id ?? null;
+  const { data: openCredit } = useQuery({
+    queryKey: ["open-credit-notes", supplierId, supplierName],
+    queryFn: () => listOpenCreditNotes({ data: { supplierId, supplierName } }),
+    enabled: step === "review" && (supplierId != null || supplierName.length > 0),
+  });
+  const openNotes = openCredit?.notes ?? [];
+  const selectedNotes = openNotes.filter((n) => !excludedNoteIds.includes(n.id));
+  const billTotal = draft
+    ? purchaseBillTotal({ invoiceTotal: draft.invoiceTotal, items: draft.items })
+    : 0;
+  const creditAllocations = allocateCreditNotes(billTotal, selectedNotes);
+  const creditDeduction = creditAllocations.reduce((sum, a) => sum + a.amount, 0);
 
   function startManualEntry() {
     setSourceLabel("manual");
@@ -246,9 +272,16 @@ function NewPurchase() {
           sourceLabel,
           overallConfidence: draft.overallConfidence,
           items: draft.items,
+          // Only notes that actually take part of this bill; a ticked note left over once the bill
+          // is fully covered stays open for the next one.
+          creditNoteIds: creditAllocations.map((a) => a.note.id),
         },
       });
-      toast.success(`Purchase #${result.purchaseId} saved.`);
+      toast.success(
+        result.creditNoteAmount > 0
+          ? `Purchase #${result.purchaseId} saved — ${formatInr(result.creditNoteAmount)} credit note deducted.`
+          : `Purchase #${result.purchaseId} saved.`,
+      );
       navigate({ to: "/app/purchases" });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save purchase.");
@@ -374,10 +407,9 @@ function NewPurchase() {
                   <Input value={draft.invoiceNumber} onChange={(e) => setDraft({ ...draft, invoiceNumber: e.target.value })} />
                 </Field>
                 <Field label="Invoice Date">
-                  <Input
-                    type="date"
+                  <DateInput
                     value={draft.invoiceDate}
-                    onChange={(e) => setDraft({ ...draft, invoiceDate: e.target.value })}
+                    onChange={(v) => setDraft({ ...draft, invoiceDate: v })}
                   />
                 </Field>
                 <Field label="Invoice Total">
@@ -543,11 +575,11 @@ function NewPurchase() {
                         />
                       </TableCell>
                       <TableCell>
-                        <Input
+                        <DateInput
                           className="w-36"
-                          type="date"
+                          mode="expiry"
                           value={item.expiryDate ?? ""}
-                          onChange={(e) => updateItem(i, { expiryDate: e.target.value })}
+                          onChange={(v) => updateItem(i, { expiryDate: v || null })}
                         />
                       </TableCell>
                       {showAdvancedCols && (
@@ -646,6 +678,72 @@ function NewPurchase() {
               </Table>
             </CardContent>
           </Card>
+
+          {openNotes.length > 0 && (
+            <Card className="border-emerald-500/40">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <ReceiptText className="h-4 w-4 text-emerald-600" />
+                  Credit notes from {openNotes[0].supplierName} — deducted from this bill
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3">
+                <div className="flex flex-col gap-2">
+                  {openNotes.map((note) => {
+                    const allocation = creditAllocations.find((a) => a.note.id === note.id);
+                    const checked = !excludedNoteIds.includes(note.id);
+                    return (
+                      <label
+                        key={note.id}
+                        className="flex cursor-pointer items-center gap-3 rounded-md border border-border p-2 text-sm"
+                      >
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(v) =>
+                            setExcludedNoteIds((ids) =>
+                              v ? ids.filter((id) => id !== note.id) : [...ids, note.id],
+                            )
+                          }
+                        />
+                        <div className="flex flex-1 flex-wrap items-center gap-x-3 gap-y-0.5">
+                          <span className="font-medium">
+                            {note.noteNumber ? `CN ${note.noteNumber}` : `Credit note #${note.id}`}
+                          </span>
+                          {note.noteDate && (
+                            <span className="text-xs text-muted-foreground">
+                              {formatDate(note.noteDate)}
+                            </span>
+                          )}
+                          <span className="text-xs text-muted-foreground">
+                            Available {formatInr(note.remaining)}
+                          </span>
+                        </div>
+                        <span className="font-mono text-sm">
+                          {allocation
+                            ? `− ${formatInr(allocation.amount)}`
+                            : checked
+                              ? "not needed"
+                              : "kept for later"}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <div className="ml-auto grid w-full max-w-xs grid-cols-2 gap-1 text-sm">
+                  <span className="text-muted-foreground">Bill total</span>
+                  <span className="text-right font-mono">{formatInr(billTotal)}</span>
+                  <span className="text-muted-foreground">Credit note</span>
+                  <span className="text-right font-mono text-emerald-600">
+                    − {formatInr(creditDeduction)}
+                  </span>
+                  <span className="font-semibold">Net payable</span>
+                  <span className="text-right font-mono font-semibold">
+                    {formatInr(billTotal - creditDeduction)}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setStep("capture")}>

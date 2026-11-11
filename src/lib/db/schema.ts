@@ -98,6 +98,10 @@ export const purchases = pgTable("purchases", {
   status: text("status").notNull().default("draft"), // draft | verified
   ocrConfidence: doublePrecision("ocr_confidence"),
   sourceLabel: text("source_label"), // camera | webcam | pdf | scanner | email
+  // Supplier credit notes deducted from this bill (sum of its credit_note_applications rows).
+  // invoiceTotal stays the supplier's printed total; the amount actually payable is
+  // invoiceTotal - creditNoteAmount.
+  creditNoteAmount: doublePrecision("credit_note_amount").notNull().default(0),
   createdAt: createdAt(),
 });
 
@@ -129,6 +133,44 @@ export const purchaseItems = pgTable("purchase_items", {
   quantity: integer("quantity").notNull().default(0),
   confidence: doublePrecision("confidence").default(1),
   flags: text("flags"), // JSON array of warning flags
+  createdAt: createdAt(),
+});
+
+// A credit note a supplier issued against returned (usually expired) stock. It is a balance the
+// pharmacy holds with that supplier: appliedAmount grows as it is deducted from later purchase
+// bills from the same supplier, until it reaches amount. The uploaded note itself (photo/PDF) is
+// kept inline as base64 — these are small one-page documents, and keeping them in Postgres means
+// they inherit the same Row-Level Security as the row, with no separate storage bucket to secure.
+export const creditNotes = pgTable("credit_notes", {
+  id: id(),
+  ownerId: ownerId(),
+  supplierId: integer("supplier_id")
+    .notNull()
+    .references(() => suppliers.id),
+  noteNumber: text("note_number"),
+  noteDate: text("note_date"),
+  amount: doublePrecision("amount").notNull().default(0),
+  appliedAmount: doublePrecision("applied_amount").notNull().default(0),
+  reason: text("reason"),
+  batchIdsJson: text("batch_ids_json"), // JSON array of the expiry batch ids this note covers
+  fileName: text("file_name"),
+  fileMimeType: text("file_mime_type"),
+  fileData: text("file_data"),
+  createdAt: createdAt(),
+});
+
+// One row per deduction of a credit note from a purchase bill — a note larger than one bill is
+// split across several purchases, so this (not a single column on either side) is the ledger.
+export const creditNoteApplications = pgTable("credit_note_applications", {
+  id: id(),
+  ownerId: ownerId(),
+  creditNoteId: integer("credit_note_id")
+    .notNull()
+    .references(() => creditNotes.id),
+  purchaseId: integer("purchase_id")
+    .notNull()
+    .references(() => purchases.id),
+  amount: doublePrecision("amount").notNull().default(0),
   createdAt: createdAt(),
 });
 
