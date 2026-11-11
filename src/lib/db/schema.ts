@@ -277,6 +277,9 @@ export const billSettings = pgTable("bill_settings", {
   footerNote: text("footer_note"),
   termsText: text("terms_text"),
   customFieldsJson: text("custom_fields_json"), // JSON array of { label, value }
+  // JSON { plain, hiddenColumns, hiddenSections } — the full print layout (see BillLayout in
+  // print-bill.ts). The show* columns above are kept in sync with it on save for older readers.
+  layoutJson: text("layout_json"),
 });
 
 export const emailSettings = pgTable("email_settings", {

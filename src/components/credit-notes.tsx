@@ -85,15 +85,20 @@ function CreditNoteForm({
 }: CreditNoteDialogProps) {
   const [form, setForm] = useState(() => {
     // Start with every written-off batch ticked and the amount at their value — the usual case is
-    // a credit note covering exactly the expiry stock that was sent back.
+    // a credit note covering exactly the expiry stock that was sent back. With nothing written
+    // off (e.g. opened from a single expired row still on the shelf), tick what was passed in and
+    // use its stock value instead.
     const written = batches.filter((b) => b.expiredQuantity > 0);
+    const preselected = written.length > 0 ? written : batches.length === 1 ? batches : [];
+    const value = (b: CreditNoteBatchOption) =>
+      b.expiredQuantity > 0 ? b.expiredValue : b.estimatedLoss;
     return {
       supplierId,
       noteNumber: "",
       noteDate: toDateInputValue(new Date()),
-      amount: Math.round(written.reduce((sum, b) => sum + b.expiredValue, 0) * 100) / 100,
+      amount: Math.round(preselected.reduce((sum, b) => sum + value(b), 0) * 100) / 100,
       reason: "",
-      batchIds: written.map((b) => b.id),
+      batchIds: preselected.map((b) => b.id),
       file: null as File | null,
     };
   });

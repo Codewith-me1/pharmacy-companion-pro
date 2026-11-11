@@ -373,6 +373,20 @@ function ExpiryPage() {
         <TabsContent value="expired">
           <Card>
             <CardContent className="p-0">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border p-3">
+                <p className="text-xs text-muted-foreground">
+                  Got a credit note from the supplier for returned stock? Recording it is optional — it
+                  is then deducted from that supplier's next purchase bill.
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  // Rows here span suppliers, so no batches are offered — the row action links one.
+                  onClick={() => setCreditNoteTarget({ batches: [] })}
+                >
+                  <ReceiptText className="h-3.5 w-3.5" /> Add Credit Note (optional)
+                </Button>
+              </div>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -418,7 +432,13 @@ function ExpiryPage() {
                       </TableCell>
                       <TableCell className="text-right font-mono">{formatInr(item.estimatedLoss)}</TableCell>
                       <TableCell className="text-right">
-                        <RowActions onEdit={() => openEditRow(item)} onDelete={() => setDeleteTarget({ id: item.id, batchNo: item.batchNo })} />
+                        <RowActions
+                          onEdit={() => openEditRow(item)}
+                          onDelete={() => setDeleteTarget({ id: item.id, batchNo: item.batchNo })}
+                          onCreditNote={() =>
+                            setCreditNoteTarget({ supplierId: item.supplierId ?? undefined, batches: [item] })
+                          }
+                        />
                       </TableCell>
                     </TableRow>
                   ))}
@@ -651,9 +671,22 @@ function ExpiryPage() {
   );
 }
 
-function RowActions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+function RowActions({
+  onEdit,
+  onDelete,
+  onCreditNote,
+}: {
+  onEdit: () => void;
+  onDelete: () => void;
+  onCreditNote?: () => void;
+}) {
   return (
     <div className="flex justify-end gap-1">
+      {onCreditNote && (
+        <Button variant="ghost" size="icon" title="Add credit note for this batch (optional)" onClick={onCreditNote}>
+          <ReceiptText className="h-4 w-4" />
+        </Button>
+      )}
       <Button variant="ghost" size="icon" onClick={onEdit}>
         <Pencil className="h-4 w-4" />
       </Button>

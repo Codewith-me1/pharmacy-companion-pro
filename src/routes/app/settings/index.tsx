@@ -17,6 +17,7 @@ import {
   XCircle,
   Receipt,
   Eye,
+  Pencil,
   Plus,
   Trash2,
   ChevronDown,
@@ -24,7 +25,14 @@ import {
 import { getBusinessSettings, saveBusinessSettings } from "@/lib/api/business-settings.functions";
 import { getEmailSettings, saveEmailSettings, testEmailConnection } from "@/lib/api/email-settings.functions";
 import { getBillSettings, saveBillSettings } from "@/lib/api/bill-settings.functions";
-import { printBill, DEFAULT_BILL_CUSTOMIZATION } from "@/lib/print-bill";
+import {
+  printBill,
+  layoutFromSettings,
+  withLayout,
+  DEFAULT_BILL_CUSTOMIZATION,
+  type PrintBillData,
+} from "@/lib/print-bill";
+import { BillEditorDialog, BillLayoutControls } from "@/components/bill-editor-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -398,10 +406,6 @@ function BillCustomizationCard() {
     onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to save bill customization."),
   });
 
-  function toggle(key: keyof typeof form) {
-    setForm((f) => ({ ...f, [key]: !f[key] }));
-  }
-
   function updateField(i: number, patch: Partial<{ label: string; value: string }>) {
     setForm((f) => ({
       ...f,
@@ -417,8 +421,10 @@ function BillCustomizationCard() {
     setForm((f) => ({ ...f, customFields: f.customFields.filter((_, idx) => idx !== i) }));
   }
 
-  function previewBill() {
-    printBill({
+  const [testBill, setTestBill] = useState<PrintBillData | null>(null);
+
+  function sampleBill(): PrintBillData {
+    return {
       billNumber: "PREVIEW-00001",
       billType: "retail",
       createdAt: new Date().toLocaleDateString("en-IN"),
@@ -436,7 +442,7 @@ function BillCustomizationCard() {
       ],
       discount: 5,
       settings: form,
-    });
+    };
   }
 
   return (
@@ -454,29 +460,13 @@ function BillCustomizationCard() {
         </p>
 
         <div>
-          <h3 className="mb-2 text-xs font-semibold text-muted-foreground">Show on Bill</h3>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <label className="flex items-center gap-2 text-sm">
-              <Switch checked={form.showDoctor} onCheckedChange={() => toggle("showDoctor")} /> Doctor name
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <Switch checked={form.showCustomerAddress} onCheckedChange={() => toggle("showCustomerAddress")} />
-              Customer address
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <Switch checked={form.showBatchNo} onCheckedChange={() => toggle("showBatchNo")} /> Batch number
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <Switch checked={form.showExpiry} onCheckedChange={() => toggle("showExpiry")} /> Expiry date
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <Switch checked={form.showMrp} onCheckedChange={() => toggle("showMrp")} /> MRP column
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <Switch checked={form.showDiscountPercent} onCheckedChange={() => toggle("showDiscountPercent")} />
-              Discount % column
-            </label>
-          </div>
+          <h3 className="mb-2 text-xs font-semibold text-muted-foreground">
+            Bill Layout — used for every printed bill
+          </h3>
+          <BillLayoutControls
+            layout={layoutFromSettings(form)}
+            onChange={(layout) => setForm((f) => withLayout(f, layout))}
+          />
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -532,14 +522,22 @@ function BillCustomizationCard() {
         </div>
 
         <div className="flex gap-2">
-          <Button variant="outline" onClick={previewBill}>
+          <Button variant="outline" onClick={() => printBill(sampleBill())}>
             <Eye className="h-4 w-4" /> Preview Bill
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setTestBill(sampleBill())}
+            title="Open a sample bill in the bill editor to try out layouts, then print or save one as the default"
+          >
+            <Pencil className="h-4 w-4" /> Test Bill (edit &amp; print)
           </Button>
           <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
             Save Bill Customization
           </Button>
         </div>
       </CardContent>
+      <BillEditorDialog bill={testBill} onOpenChange={(open) => !open && setTestBill(null)} />
     </Card>
   );
 }

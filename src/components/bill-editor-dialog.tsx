@@ -1,15 +1,19 @@
 import { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Printer, RotateCcw, Trash2 } from "lucide-react";
+import { Printer, RotateCcw, Save, Trash2 } from "lucide-react";
 import {
   BILL_COLUMNS,
   BILL_SECTIONS,
+  DEFAULT_BILL_CUSTOMIZATION,
   layoutFromSettings,
   printBill,
+  withLayout,
   type BillLayout,
   type PrintBillData,
   type PrintBillItem,
 } from "@/lib/print-bill";
+import { saveBillSettings } from "@/lib/api/bill-settings.functions";
 import { formatInr } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,45 +37,74 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-// The last layout used, remembered per browser so a pharmacy that always prints plain bills
-// without, say, the MRP column doesn't redo it for every bill. Best-effort only: storage can be
-// unavailable (private mode, blocked site data) and the editor then starts from bill settings.
-const LAYOUT_STORAGE_KEY = "bill-editor-layout";
-
-function loadLayout(fallback: BillLayout): BillLayout {
-  try {
-    const raw = localStorage.getItem(LAYOUT_STORAGE_KEY);
-    if (!raw) return fallback;
-    const parsed = JSON.parse(raw) as Partial<BillLayout>;
-    return {
-      plain: !!parsed.plain,
-      hiddenColumns: Array.isArray(parsed.hiddenColumns)
-        ? parsed.hiddenColumns
-        : fallback.hiddenColumns,
-      hiddenSections: Array.isArray(parsed.hiddenSections)
-        ? parsed.hiddenSections
-        : fallback.hiddenSections,
-    };
-  } catch {
-    return fallback;
-  }
-}
-
-function saveLayout(layout: BillLayout) {
-  try {
-    localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layout));
-  } catch {
-    /* storage unavailable — nothing to remember, printing still works */
-  }
-}
-
 function toggle<T>(list: T[], value: T, on: boolean): T[] {
   return on ? list.filter((v) => v !== value) : [...list, value];
 }
 
+// Plain-layout switch plus column and section checkboxes. Shared by the bill editor (one
+// printout) and Settings → Bill Customization (the saved layout every bill prints with).
+export function BillLayoutControls({
+  layout,
+  onChange,
+}: {
+  layout: BillLayout;
+  onChange: (layout: BillLayout) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <label className="flex items-center gap-2 text-sm font-medium">
+        <Switch checked={layout.plain} onCheckedChange={(plain) => onChange({ ...layout, plain })} />
+        Plain layout: just the data, no table lines or boxes
+      </label>
+      <div className="flex flex-col gap-1.5">
+        <Label className="text-xs text-muted-foreground">Columns</Label>
+        <div className="flex flex-wrap gap-x-4 gap-y-2">
+          {BILL_COLUMNS.map((c) => {
+            const on = !layout.hiddenColumns.includes(c.key);
+            return (
+              <label key={c.key} className="flex cursor-pointer items-center gap-1.5 text-sm">
+                <Checkbox
+                  checked={on}
+                  onCheckedChange={() =>
+                    onChange({ ...layout, hiddenColumns: toggle(layout.hiddenColumns, c.key, on) })
+                  }
+                />
+                {c.label}
+              </label>
+            );
+          })}
+        </div>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label className="text-xs text-muted-foreground">Show on bill</Label>
+        <div className="flex flex-wrap gap-x-4 gap-y-2">
+          {BILL_SECTIONS.map((sec) => {
+            const on = !layout.hiddenSections.includes(sec.key);
+            return (
+              <label key={sec.key} className="flex cursor-pointer items-center gap-1.5 text-sm">
+                <Checkbox
+                  checked={on}
+                  onCheckedChange={() =>
+                    onChange({
+                      ...layout,
+                      hiddenSections: toggle(layout.hiddenSections, sec.key, on),
+                    })
+                  }
+                />
+                {sec.label}
+              </label>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Edit a sales bill's printout before printing: hide columns or whole sections, switch to a plain
-// layout with no table lines, change or clear any field, and remove rows. This shapes the printed
-// copy only — the saved sale, its total and the stock it took are not touched.
+// layout with no table lines, change or clear any field, and remove rows. Field and row edits
+// shape this printed copy only — the saved sale, its total and the stock it took are not touched.
+// The layout can also be saved as the default that every bill prints with.
 export function BillEditorDialog({
   bill,
   onOpenChange,
@@ -88,10 +121,19 @@ export function BillEditorDialog({
 }
 
 function BillEditor({ bill, onDone }: { bill: PrintBillData; onDone: () => void }) {
+  const queryClient = useQueryClient();
   const [draft, setDraft] = useState<PrintBillData>(bill);
-  const [layout, setLayout] = useState<BillLayout>(() =>
-    loadLayout(layoutFromSettings(bill.settings)),
-  );
+  const [layout, setLayout] = useState<BillLayout>(() => layoutFromSettings(bill.settings));
+
+  const saveDefaultMutation = useMutation({
+    mutationFn: () =>
+      saveBillSettings({ data: withLayout(bill.settings ?? DEFAULT_BILL_CUSTOMIZATION, layout) }),
+    onSuccess: () => {
+      toast.success("Saved — every bill will now print with this layout.");
+      queryClient.invalidateQueries({ queryKey: ["bill-settings"] });
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to save layout."),
+  });
 
   function updateItem(index: number, patch: Partial<PrintBillItem>) {
     setDraft((d) => ({
@@ -108,7 +150,6 @@ function BillEditor({ bill, onDone }: { bill: PrintBillData; onDone: () => void 
   const grandTotal = Math.round(subtotal - draft.discount);
 
   function handlePrint() {
-    saveLayout(layout);
     try {
       printBill({ ...draft, layout });
       onDone();
@@ -123,71 +164,29 @@ function BillEditor({ bill, onDone }: { bill: PrintBillData; onDone: () => void 
         <DialogTitle>Edit Bill {bill.billNumber} before printing</DialogTitle>
       </DialogHeader>
       <p className="text-xs text-muted-foreground">
-        Changes here apply to this printout only. The saved bill, its total and the stock it used
-        stay as they are.
+        Field and row changes apply to this printout only. The saved bill, its total and the stock
+        it used stay as they are. Use "Save as default" to print every bill with this layout.
       </p>
 
       <section className="flex flex-col gap-3 rounded-md border border-border p-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <label className="flex items-center gap-2 text-sm font-medium">
-            <Switch
-              checked={layout.plain}
-              onCheckedChange={(plain) => setLayout({ ...layout, plain })}
-            />
-            Plain layout: just the data, no table lines or boxes
-          </label>
+        <BillLayoutControls layout={layout} onChange={setLayout} />
+        <div className="flex flex-wrap justify-end gap-2">
           <Button
             size="sm"
             variant="ghost"
             onClick={() => setLayout(layoutFromSettings(bill.settings))}
-            title="Go back to the columns and sections set in Settings → Bill"
+            title="Go back to the layout saved in Settings → Bill Customization"
           >
-            <RotateCcw className="h-3.5 w-3.5" /> Reset to bill settings
+            <RotateCcw className="h-3.5 w-3.5" /> Reset to saved layout
           </Button>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-xs text-muted-foreground">Columns</Label>
-          <div className="flex flex-wrap gap-x-4 gap-y-2">
-            {BILL_COLUMNS.map((c) => {
-              const on = !layout.hiddenColumns.includes(c.key);
-              return (
-                <label key={c.key} className="flex cursor-pointer items-center gap-1.5 text-sm">
-                  <Checkbox
-                    checked={on}
-                    onCheckedChange={() =>
-                      setLayout({
-                        ...layout,
-                        hiddenColumns: toggle(layout.hiddenColumns, c.key, on),
-                      })
-                    }
-                  />
-                  {c.label}
-                </label>
-              );
-            })}
-          </div>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-xs text-muted-foreground">Show on bill</Label>
-          <div className="flex flex-wrap gap-x-4 gap-y-2">
-            {BILL_SECTIONS.map((sec) => {
-              const on = !layout.hiddenSections.includes(sec.key);
-              return (
-                <label key={sec.key} className="flex cursor-pointer items-center gap-1.5 text-sm">
-                  <Checkbox
-                    checked={on}
-                    onCheckedChange={() =>
-                      setLayout({
-                        ...layout,
-                        hiddenSections: toggle(layout.hiddenSections, sec.key, on),
-                      })
-                    }
-                  />
-                  {sec.label}
-                </label>
-              );
-            })}
-          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={saveDefaultMutation.isPending}
+            onClick={() => saveDefaultMutation.mutate()}
+          >
+            <Save className="h-3.5 w-3.5" /> Save as default for all bills
+          </Button>
         </div>
       </section>
 

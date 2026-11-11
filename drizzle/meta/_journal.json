@@ -71,6 +71,13 @@
       "when": 1794409583092,
       "tag": "0009_credit_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794417824989,
+      "tag": "0010_bill_layout",
+      "breakpoints": true
     }
   ]
 }

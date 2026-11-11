@@ -1,0 +1,1 @@
+ALTER TABLE "bill_settings" ADD COLUMN "layout_json" text;

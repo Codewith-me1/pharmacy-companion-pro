@@ -20,6 +20,9 @@ export type BillCustomization = {
   footerNote: string;
   termsText: string; // one condition per line
   customFields: BillCustomFieldItem[];
+  // The saved print layout (Settings -> Bill Customization). Null for pharmacies that never saved
+  // one; layoutFromSettings then derives it from the show* switches above.
+  layout?: BillLayout | null;
 };
 
 export const DEFAULT_BILL_CUSTOMIZATION: BillCustomization = {
@@ -36,6 +39,7 @@ export const DEFAULT_BILL_CUSTOMIZATION: BillCustomization = {
     "Please retain this bill for any exchange or warranty claims.",
   ].join("\n"),
   customFields: [],
+  layout: null,
 };
 
 export type BillColumnKey =
@@ -98,9 +102,9 @@ export const BILL_SECTIONS: { key: BillSectionKey; label: string }[] = [
   { key: "duplicateCopy", label: "Duplicate copy" },
 ];
 
-// One-off print adjustments made in the bill editor. When present it decides which columns and
-// sections appear, instead of the saved bill settings' show* switches (the editor starts from
-// those, see layoutFromSettings). `plain` drops the table grid lines and boxes for a plain list.
+// Which columns and sections a bill prints, and whether it prints plain (no table grid lines or
+// boxes). Saved once in bill settings so every printout uses it; the bill editor can also apply a
+// one-off variation to a single printout.
 export type BillLayout = {
   plain: boolean;
   hiddenColumns: BillColumnKey[];
@@ -109,6 +113,9 @@ export type BillLayout = {
 
 export function layoutFromSettings(settings: BillCustomization | null | undefined): BillLayout {
   const s = settings ?? DEFAULT_BILL_CUSTOMIZATION;
+  if (s.layout) {
+    return { plain: s.layout.plain, hiddenColumns: [...s.layout.hiddenColumns], hiddenSections: [...s.layout.hiddenSections] };
+  }
   const hiddenColumns: BillColumnKey[] = [];
   if (!s.showBatchNo) hiddenColumns.push("batch");
   if (!s.showExpiry) hiddenColumns.push("expiry");
@@ -118,6 +125,20 @@ export function layoutFromSettings(settings: BillCustomization | null | undefine
   if (!s.showDoctor) hiddenSections.push("doctor");
   if (!s.showCustomerAddress) hiddenSections.push("customerAddress");
   return { plain: false, hiddenColumns, hiddenSections };
+}
+
+// Settings with `layout` applied, and the legacy show* switches updated to agree with it.
+export function withLayout(settings: BillCustomization, layout: BillLayout): BillCustomization {
+  return {
+    ...settings,
+    layout,
+    showBatchNo: !layout.hiddenColumns.includes("batch"),
+    showExpiry: !layout.hiddenColumns.includes("expiry"),
+    showMrp: !layout.hiddenColumns.includes("mrp"),
+    showDiscountPercent: !layout.hiddenColumns.includes("discount"),
+    showDoctor: !layout.hiddenSections.includes("doctor"),
+    showCustomerAddress: !layout.hiddenSections.includes("customerAddress"),
+  };
 }
 
 export type PrintBillData = {
