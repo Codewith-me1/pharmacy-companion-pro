@@ -9,35 +9,30 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SignupRouteImport } from './routes/signup'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as AppRouteImport } from './routes/app'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppRouteImport } from './routes/app'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as SignupRouteImport } from './routes/signup'
 import { Route as AppIndexRouteImport } from './routes/app/index'
 import { Route as AppDashboardRouteImport } from './routes/app/dashboard'
-import { Route as AppSuppliersIndexRouteImport } from './routes/app/suppliers/index'
-import { Route as AppStockIndexRouteImport } from './routes/app/stock/index'
-import { Route as AppSettingsIndexRouteImport } from './routes/app/settings/index'
-import { Route as AppSalesIndexRouteImport } from './routes/app/sales/index'
-import { Route as AppReportsIndexRouteImport } from './routes/app/reports/index'
-import { Route as AppPurchasesIndexRouteImport } from './routes/app/purchases/index'
-import { Route as AppInventoryIndexRouteImport } from './routes/app/inventory/index'
-import { Route as AppExpiryIndexRouteImport } from './routes/app/expiry/index'
-import { Route as AppDoctorsIndexRouteImport } from './routes/app/doctors/index'
-import { Route as AppCustomersIndexRouteImport } from './routes/app/customers/index'
 import { Route as AppBillingIndexRouteImport } from './routes/app/billing/index'
-import { Route as AppSuppliersSupplierIdRouteImport } from './routes/app/suppliers/$supplierId'
-import { Route as AppPurchasesNewRouteImport } from './routes/app/purchases/new'
+import { Route as AppCustomersIndexRouteImport } from './routes/app/customers/index'
+import { Route as AppDoctorsIndexRouteImport } from './routes/app/doctors/index'
+import { Route as AppExpiryIndexRouteImport } from './routes/app/expiry/index'
+import { Route as AppInventoryIndexRouteImport } from './routes/app/inventory/index'
 import { Route as AppInventoryMedicineIdRouteImport } from './routes/app/inventory/$medicineId'
+import { Route as AppPurchasesIndexRouteImport } from './routes/app/purchases/index'
+import { Route as AppPurchasesNewRouteImport } from './routes/app/purchases/new'
+import { Route as AppReportsIndexRouteImport } from './routes/app/reports/index'
+import { Route as AppSalesIndexRouteImport } from './routes/app/sales/index'
+import { Route as AppSettingsIndexRouteImport } from './routes/app/settings/index'
+import { Route as AppStockIndexRouteImport } from './routes/app/stock/index'
+import { Route as AppSuppliersIndexRouteImport } from './routes/app/suppliers/index'
+import { Route as AppSuppliersSupplierIdRouteImport } from './routes/app/suppliers/$supplierId'
 
-const SignupRoute = SignupRouteImport.update({
-  id: '/signup',
-  path: '/signup',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppRoute = AppRouteImport.update({
@@ -45,9 +40,14 @@ const AppRoute = AppRouteImport.update({
   path: '/app',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppIndexRoute = AppIndexRouteImport.update({
@@ -60,49 +60,9 @@ const AppDashboardRoute = AppDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AppRoute,
 } as any)
-const AppSuppliersIndexRoute = AppSuppliersIndexRouteImport.update({
-  id: '/suppliers/',
-  path: '/suppliers/',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppStockIndexRoute = AppStockIndexRouteImport.update({
-  id: '/stock/',
-  path: '/stock/',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
-  id: '/settings/',
-  path: '/settings/',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppSalesIndexRoute = AppSalesIndexRouteImport.update({
-  id: '/sales/',
-  path: '/sales/',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppReportsIndexRoute = AppReportsIndexRouteImport.update({
-  id: '/reports/',
-  path: '/reports/',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppPurchasesIndexRoute = AppPurchasesIndexRouteImport.update({
-  id: '/purchases/',
-  path: '/purchases/',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppInventoryIndexRoute = AppInventoryIndexRouteImport.update({
-  id: '/inventory/',
-  path: '/inventory/',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppExpiryIndexRoute = AppExpiryIndexRouteImport.update({
-  id: '/expiry/',
-  path: '/expiry/',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppDoctorsIndexRoute = AppDoctorsIndexRouteImport.update({
-  id: '/doctors/',
-  path: '/doctors/',
+const AppBillingIndexRoute = AppBillingIndexRouteImport.update({
+  id: '/billing/',
+  path: '/billing/',
   getParentRoute: () => AppRoute,
 } as any)
 const AppCustomersIndexRoute = AppCustomersIndexRouteImport.update({
@@ -110,14 +70,29 @@ const AppCustomersIndexRoute = AppCustomersIndexRouteImport.update({
   path: '/customers/',
   getParentRoute: () => AppRoute,
 } as any)
-const AppBillingIndexRoute = AppBillingIndexRouteImport.update({
-  id: '/billing/',
-  path: '/billing/',
+const AppDoctorsIndexRoute = AppDoctorsIndexRouteImport.update({
+  id: '/doctors/',
+  path: '/doctors/',
   getParentRoute: () => AppRoute,
 } as any)
-const AppSuppliersSupplierIdRoute = AppSuppliersSupplierIdRouteImport.update({
-  id: '/suppliers/$supplierId',
-  path: '/suppliers/$supplierId',
+const AppExpiryIndexRoute = AppExpiryIndexRouteImport.update({
+  id: '/expiry/',
+  path: '/expiry/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppInventoryIndexRoute = AppInventoryIndexRouteImport.update({
+  id: '/inventory/',
+  path: '/inventory/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppInventoryMedicineIdRoute = AppInventoryMedicineIdRouteImport.update({
+  id: '/inventory/$medicineId',
+  path: '/inventory/$medicineId',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPurchasesIndexRoute = AppPurchasesIndexRouteImport.update({
+  id: '/purchases/',
+  path: '/purchases/',
   getParentRoute: () => AppRoute,
 } as any)
 const AppPurchasesNewRoute = AppPurchasesNewRouteImport.update({
@@ -125,9 +100,34 @@ const AppPurchasesNewRoute = AppPurchasesNewRouteImport.update({
   path: '/purchases/new',
   getParentRoute: () => AppRoute,
 } as any)
-const AppInventoryMedicineIdRoute = AppInventoryMedicineIdRouteImport.update({
-  id: '/inventory/$medicineId',
-  path: '/inventory/$medicineId',
+const AppReportsIndexRoute = AppReportsIndexRouteImport.update({
+  id: '/reports/',
+  path: '/reports/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSalesIndexRoute = AppSalesIndexRouteImport.update({
+  id: '/sales/',
+  path: '/sales/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
+  id: '/settings/',
+  path: '/settings/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppStockIndexRoute = AppStockIndexRouteImport.update({
+  id: '/stock/',
+  path: '/stock/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSuppliersIndexRoute = AppSuppliersIndexRouteImport.update({
+  id: '/suppliers/',
+  path: '/suppliers/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSuppliersSupplierIdRoute = AppSuppliersSupplierIdRouteImport.update({
+  id: '/suppliers/$supplierId',
+  path: '/suppliers/$supplierId',
   getParentRoute: () => AppRoute,
 } as any)
 
@@ -274,18 +274,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/signup': {
-      id: '/signup'
-      path: '/signup'
-      fullPath: '/signup'
-      preLoaderRoute: typeof SignupRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/app': {
@@ -295,11 +288,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/app/': {
@@ -316,67 +316,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDashboardRouteImport
       parentRoute: typeof AppRoute
     }
-    '/app/suppliers/': {
-      id: '/app/suppliers/'
-      path: '/suppliers'
-      fullPath: '/app/suppliers/'
-      preLoaderRoute: typeof AppSuppliersIndexRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/stock/': {
-      id: '/app/stock/'
-      path: '/stock'
-      fullPath: '/app/stock/'
-      preLoaderRoute: typeof AppStockIndexRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/settings/': {
-      id: '/app/settings/'
-      path: '/settings'
-      fullPath: '/app/settings/'
-      preLoaderRoute: typeof AppSettingsIndexRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/sales/': {
-      id: '/app/sales/'
-      path: '/sales'
-      fullPath: '/app/sales/'
-      preLoaderRoute: typeof AppSalesIndexRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/reports/': {
-      id: '/app/reports/'
-      path: '/reports'
-      fullPath: '/app/reports/'
-      preLoaderRoute: typeof AppReportsIndexRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/purchases/': {
-      id: '/app/purchases/'
-      path: '/purchases'
-      fullPath: '/app/purchases/'
-      preLoaderRoute: typeof AppPurchasesIndexRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/inventory/': {
-      id: '/app/inventory/'
-      path: '/inventory'
-      fullPath: '/app/inventory/'
-      preLoaderRoute: typeof AppInventoryIndexRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/expiry/': {
-      id: '/app/expiry/'
-      path: '/expiry'
-      fullPath: '/app/expiry/'
-      preLoaderRoute: typeof AppExpiryIndexRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/doctors/': {
-      id: '/app/doctors/'
-      path: '/doctors'
-      fullPath: '/app/doctors/'
-      preLoaderRoute: typeof AppDoctorsIndexRouteImport
+    '/app/billing/': {
+      id: '/app/billing/'
+      path: '/billing'
+      fullPath: '/app/billing/'
+      preLoaderRoute: typeof AppBillingIndexRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/customers/': {
@@ -386,18 +330,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppCustomersIndexRouteImport
       parentRoute: typeof AppRoute
     }
-    '/app/billing/': {
-      id: '/app/billing/'
-      path: '/billing'
-      fullPath: '/app/billing/'
-      preLoaderRoute: typeof AppBillingIndexRouteImport
+    '/app/doctors/': {
+      id: '/app/doctors/'
+      path: '/doctors'
+      fullPath: '/app/doctors/'
+      preLoaderRoute: typeof AppDoctorsIndexRouteImport
       parentRoute: typeof AppRoute
     }
-    '/app/suppliers/$supplierId': {
-      id: '/app/suppliers/$supplierId'
-      path: '/suppliers/$supplierId'
-      fullPath: '/app/suppliers/$supplierId'
-      preLoaderRoute: typeof AppSuppliersSupplierIdRouteImport
+    '/app/expiry/': {
+      id: '/app/expiry/'
+      path: '/expiry'
+      fullPath: '/app/expiry/'
+      preLoaderRoute: typeof AppExpiryIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/inventory/': {
+      id: '/app/inventory/'
+      path: '/inventory'
+      fullPath: '/app/inventory/'
+      preLoaderRoute: typeof AppInventoryIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/inventory/$medicineId': {
+      id: '/app/inventory/$medicineId'
+      path: '/inventory/$medicineId'
+      fullPath: '/app/inventory/$medicineId'
+      preLoaderRoute: typeof AppInventoryMedicineIdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/purchases/': {
+      id: '/app/purchases/'
+      path: '/purchases'
+      fullPath: '/app/purchases/'
+      preLoaderRoute: typeof AppPurchasesIndexRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/purchases/new': {
@@ -407,11 +372,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPurchasesNewRouteImport
       parentRoute: typeof AppRoute
     }
-    '/app/inventory/$medicineId': {
-      id: '/app/inventory/$medicineId'
-      path: '/inventory/$medicineId'
-      fullPath: '/app/inventory/$medicineId'
-      preLoaderRoute: typeof AppInventoryMedicineIdRouteImport
+    '/app/reports/': {
+      id: '/app/reports/'
+      path: '/reports'
+      fullPath: '/app/reports/'
+      preLoaderRoute: typeof AppReportsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/sales/': {
+      id: '/app/sales/'
+      path: '/sales'
+      fullPath: '/app/sales/'
+      preLoaderRoute: typeof AppSalesIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/settings/': {
+      id: '/app/settings/'
+      path: '/settings'
+      fullPath: '/app/settings/'
+      preLoaderRoute: typeof AppSettingsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/stock/': {
+      id: '/app/stock/'
+      path: '/stock'
+      fullPath: '/app/stock/'
+      preLoaderRoute: typeof AppStockIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/suppliers/': {
+      id: '/app/suppliers/'
+      path: '/suppliers'
+      fullPath: '/app/suppliers/'
+      preLoaderRoute: typeof AppSuppliersIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/suppliers/$supplierId': {
+      id: '/app/suppliers/$supplierId'
+      path: '/suppliers/$supplierId'
+      fullPath: '/app/suppliers/$supplierId'
+      preLoaderRoute: typeof AppSuppliersSupplierIdRouteImport
       parentRoute: typeof AppRoute
     }
   }
