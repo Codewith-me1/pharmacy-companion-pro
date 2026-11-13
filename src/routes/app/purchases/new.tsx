@@ -18,7 +18,12 @@ import {
 import { extractInvoice, savePurchase } from "@/lib/api/purchases.functions";
 import { listMedicines } from "@/lib/api/medicines.functions";
 import { listOpenCreditNotes } from "@/lib/api/credit-notes.functions";
-import { allocateCreditNotes, netLineAmount, purchaseBillTotal } from "@/lib/purchase-math";
+import {
+  allocateCreditNotes,
+  grossLineAmount,
+  purchaseBillSummary,
+  purchaseBillTotal,
+} from "@/lib/purchase-math";
 import { fileToBase64 } from "@/lib/file-to-base64";
 import { pdfToImageBlob } from "@/lib/pdf-to-image";
 import { extractPdfText } from "@/lib/pdf-text";
@@ -101,6 +106,7 @@ function NewPurchase() {
   });
   const openNotes = openCredit?.notes ?? [];
   const selectedNotes = openNotes.filter((n) => !excludedNoteIds.includes(n.id));
+  const summary = purchaseBillSummary(draft?.items ?? []);
   const billTotal = draft
     ? purchaseBillTotal({ invoiceTotal: draft.invoiceTotal, items: draft.items })
     : 0;
@@ -249,6 +255,21 @@ function NewPurchase() {
       items[index] = { ...items[index], ...patch };
       return { ...d, items };
     });
+  }
+
+  // Enter moves to the next field (medicine -> pack -> batch -> ...), and from a row's last field
+  // to the first field of the next row — keyboard entry without reaching for the mouse or Tab.
+  function handleGridEnter(e: React.KeyboardEvent<HTMLElement>) {
+    if (e.key !== "Enter" || !(e.target instanceof HTMLInputElement)) return;
+    const inputs = Array.from(e.currentTarget.querySelectorAll<HTMLInputElement>("tbody input"));
+    const next = inputs[inputs.indexOf(e.target) + 1];
+    e.preventDefault();
+    if (next) {
+      next.focus();
+      next.select();
+    } else {
+      e.target.blur();
+    }
   }
 
   function removeItem(index: number) {
@@ -520,7 +541,7 @@ function NewPurchase() {
               </div>
             </CardHeader>
             <CardContent>
-              <Table>
+              <Table onKeyDown={handleGridEnter}>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Medicine</TableHead>
@@ -534,7 +555,6 @@ function NewPurchase() {
                     <TableHead>MRP ₹</TableHead>
                     <TableHead>Disc %</TableHead>
                     {showAdvancedCols && <TableHead>GST %</TableHead>}
-                    {showAdvancedCols && <TableHead>GST Value ₹</TableHead>}
                     <TableHead>Amount ₹</TableHead>
                     <TableHead>Flags</TableHead>
                     <TableHead />
@@ -543,7 +563,7 @@ function NewPurchase() {
                 <TableBody>
                   {draft.items.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={showAdvancedCols ? 15 : 11} className="p-8 text-center text-muted-foreground">
+                      <TableCell colSpan={showAdvancedCols ? 14 : 11} className="p-8 text-center text-muted-foreground">
                         No line items yet. Use "Add Item" to search for a medicine and add it manually.
                       </TableCell>
                     </TableRow>
@@ -645,13 +665,8 @@ function NewPurchase() {
                           />
                         </TableCell>
                       )}
-                      {showAdvancedCols && (
-                        <TableCell className="whitespace-nowrap text-right font-mono text-xs text-muted-foreground">
-                          {((netLineAmount(item) * item.gstPercent) / 100).toFixed(2)}
-                        </TableCell>
-                      )}
                       <TableCell className="whitespace-nowrap text-right font-mono text-xs">
-                        {netLineAmount(item).toFixed(2)}
+                        {grossLineAmount(item).toFixed(2)}
                       </TableCell>
                       <TableCell className="max-w-40">
                         <div className="flex flex-wrap gap-1">
@@ -676,6 +691,26 @@ function NewPurchase() {
                   ))}
                 </TableBody>
               </Table>
+              {draft.items.length > 0 && (
+                <div className="ml-auto mt-4 grid w-full max-w-xs grid-cols-2 gap-1 border-t border-border pt-3 text-sm">
+                  <span className="text-muted-foreground">Gross amount</span>
+                  <span className="text-right font-mono">{summary.gross.toFixed(2)}</span>
+                  <span className="text-muted-foreground">Less: Discount</span>
+                  <span className="text-right font-mono">− {summary.discount.toFixed(2)}</span>
+                  <span className="text-muted-foreground">Taxable amount</span>
+                  <span className="text-right font-mono">{summary.taxable.toFixed(2)}</span>
+                  <span className="text-muted-foreground">Add: GST</span>
+                  <span className="text-right font-mono">+ {summary.gst.toFixed(2)}</span>
+                  <span className="font-semibold">Total</span>
+                  <span className="text-right font-mono font-semibold">{summary.total.toFixed(2)}</span>
+                  {draft.invoiceTotal > 0 && Math.abs(draft.invoiceTotal - summary.total) >= 1 && (
+                    <span className="col-span-2 text-xs text-amber-600">
+                      Printed invoice total is {draft.invoiceTotal.toFixed(2)} — check rates, discounts
+                      and GST against the invoice.
+                    </span>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 
