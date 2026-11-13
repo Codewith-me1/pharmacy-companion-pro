@@ -699,11 +699,17 @@ function NewPurchase() {
                   <span className="text-right font-mono">− {summary.discount.toFixed(2)}</span>
                   <span className="text-muted-foreground">Taxable amount</span>
                   <span className="text-right font-mono">{summary.taxable.toFixed(2)}</span>
-                  <span className="text-muted-foreground">Add: GST</span>
+                  <span className="text-muted-foreground">Add: GST (CGST + SGST)</span>
                   <span className="text-right font-mono">+ {summary.gst.toFixed(2)}</span>
-                  <span className="font-semibold">Total</span>
-                  <span className="text-right font-mono font-semibold">{summary.total.toFixed(2)}</span>
-                  {draft.invoiceTotal > 0 && Math.abs(draft.invoiceTotal - summary.total) >= 1 && (
+                  <span className="text-muted-foreground">Total</span>
+                  <span className="text-right font-mono">{summary.total.toFixed(2)}</span>
+                  <span className="text-muted-foreground">Round off</span>
+                  <span className="text-right font-mono">
+                    {summary.roundOff >= 0 ? "+" : "−"} {Math.abs(summary.roundOff).toFixed(2)}
+                  </span>
+                  <span className="font-semibold">Net payable</span>
+                  <span className="text-right font-mono font-semibold">{summary.netPayable.toFixed(2)}</span>
+                  {draft.invoiceTotal > 0 && Math.abs(draft.invoiceTotal - summary.netPayable) >= 1 && (
                     <span className="col-span-2 text-xs text-amber-600">
                       Printed invoice total is {draft.invoiceTotal.toFixed(2)} — check rates, discounts
                       and GST against the invoice.
